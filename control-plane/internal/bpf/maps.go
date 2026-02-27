@@ -32,10 +32,11 @@ type Stats struct {
 	FragDrops        uint64 `json:"frag_drops"`
 	ConntrackBypass  uint64 `json:"conntrack_bypass"`
 	SYNCookiesSent   uint64 `json:"syn_cookies_sent"`
+	TotalDropsPerSec uint64 `json:"total_drops_per_sec"`
 	// Per-second rates (calculated by Manager)
-	RxPPS            uint64 `json:"rx_pps"`
-	DropPPS          uint64 `json:"drop_pps"`
-	Timestamp        int64  `json:"timestamp"`
+	RxPPS     uint64 `json:"rx_pps"`
+	DropPPS   uint64 `json:"drop_pps"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 // Manager controls interaction with pinned BPF maps.

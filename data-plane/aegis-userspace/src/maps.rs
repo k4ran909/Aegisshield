@@ -1,24 +1,23 @@
 //! Userspace BPF Map Helpers
 //!
-//! High-level wrappers for reading and writing pinned BPF maps.
-//! The XDP loader pins maps to /sys/fs/bpf/aegis/*, and this module
-//! opens those pinned maps for configuration updates and stats reading.
+//! High-level wrappers for reading/writing BPF maps via aya 0.13 API.
 
-use anyhow::{Context, Result, bail};
-use aya::maps::{HashMap, Array, PerCpuArray, PerCpuValues, MapData};
-use std::net::Ipv4Addr;
-use std::path::Path;
-use log::{info, warn};
 use aegis_common::*;
+use anyhow::{Context, Result};
+use aya::maps::{Array, HashMap, PerCpuArray};
+use aya::Ebpf;
+use log::{info, warn};
+use std::net::Ipv4Addr;
 
 /// Standard pin path for AegisShield BPF maps.
 pub const BPF_PIN_PATH: &str = "/sys/fs/bpf/aegis";
 
 /// Read aggregate statistics from the per-CPU stats array.
-/// Sums values across all CPUs for each stat index.
-pub fn read_stats(stats_map: &PerCpuArray<MapData, u64>) -> Result<Vec<(String, u64)>> {
-    let mut results = Vec::new();
+pub fn read_stats(bpf: &Ebpf) -> Result<Vec<(String, u64)>> {
+    let stats_map: PerCpuArray<_, u64> =
+        PerCpuArray::try_from(bpf.map("STATS").context("STATS map not found")?)?;
 
+    let mut results = Vec::new();
     for idx in 0..NUM_STATS {
         let per_cpu_vals = stats_map
             .get(&idx, 0)
@@ -32,31 +31,59 @@ pub fn read_stats(stats_map: &PerCpuArray<MapData, u64>) -> Result<Vec<(String, 
     Ok(results)
 }
 
-/// Print a formatted stats dashboard to stdout.
+/// Print a formatted stats dashboard to stdout (updates in-place).
 pub fn print_stats_dashboard(stats: &[(String, u64)]) {
-    println!("╔═══════════════════════════════════════════════╗");
-    println!("║        AegisShield XDP Statistics             ║");
-    println!("╠═══════════════════════════════════════════════╣");
+    use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    for (name, value) in stats {
-        println!("║  {:<25} {:>15} ║", name, format_number(*value));
+    static PREV_LINES: AtomicUsize = AtomicUsize::new(0);
+
+    let prev = PREV_LINES.load(Ordering::Relaxed);
+    let mut out = std::io::stdout().lock();
+
+    // Move cursor up to overwrite previous output
+    if prev > 0 {
+        write!(out, "\x1b[{}A\r", prev).ok();
     }
 
-    println!("╚═══════════════════════════════════════════════╝");
+    // Count lines as we print
+    let mut lines = 0;
+
+    writeln!(out, "╔═══════════════════════════════════════════════╗").ok();
+    lines += 1;
+    writeln!(out, "║        AegisShield XDP Statistics             ║").ok();
+    lines += 1;
+    writeln!(out, "╠═══════════════════════════════════════════════╣").ok();
+    lines += 1;
+
+    for (name, value) in stats {
+        writeln!(out, "║  {:<25} {:>15} ║", name, format_number(*value)).ok();
+        lines += 1;
+    }
+
+    writeln!(out, "╠═══════════════════════════════════════════════╣").ok();
+    lines += 1;
+    writeln!(out, "║  Press Ctrl-C to stop                        ║").ok();
+    lines += 1;
+    writeln!(out, "╚═══════════════════════════════════════════════╝").ok();
+    lines += 1;
+
+    out.flush().ok();
+    PREV_LINES.store(lines, Ordering::Relaxed);
 }
 
-/// Load the IP blocklist from a config list into the BPF HashMap.
-pub fn load_blocklist(
-    blocklist_map: &mut HashMap<MapData, u32, u64>,
-    ip_list: &[String],
-) -> Result<usize> {
-    let mut count = 0;
+/// Load the IP blocklist from config into the BPF HashMap.
+pub fn load_blocklist(bpf: &mut Ebpf, ip_list: &[String]) -> Result<usize> {
+    let mut blocklist_map: HashMap<_, u32, u64> = HashMap::try_from(
+        bpf.map_mut("BLOCKLIST")
+            .context("BLOCKLIST map not found")?,
+    )?;
 
+    let mut count = 0;
     for ip_str in ip_list {
         match ip_str.parse::<Ipv4Addr>() {
             Ok(ip) => {
                 let ip_u32 = u32::from(ip);
-                // Value = 1 (blocked permanently) or timestamp for auto-expiry.
                 blocklist_map
                     .insert(ip_u32, 1u64, 0)
                     .context(format!("Insert blocklist entry for {}", ip_str))?;
@@ -75,7 +102,7 @@ pub fn load_blocklist(
 
 /// Push the global configuration to the CONFIG BPF Array.
 pub fn update_config(
-    config_map: &mut Array<MapData, GlobalConfig>,
+    bpf: &mut Ebpf,
     udp_pps: u64,
     syn_flood: u64,
     icmp_pps: u64,
@@ -84,6 +111,9 @@ pub fn update_config(
     conntrack_enabled: bool,
     cookie_secret: u32,
 ) -> Result<()> {
+    let mut config_map: Array<_, GlobalConfig> =
+        Array::try_from(bpf.map_mut("CONFIG").context("CONFIG map not found")?)?;
+
     let cfg = GlobalConfig {
         udp_rate_threshold: udp_pps,
         syn_flood_threshold: syn_flood,
@@ -95,25 +125,31 @@ pub fn update_config(
         _pad: [0u8; 4],
     };
 
-    config_map.set(0, cfg, 0).context("Write GlobalConfig to BPF map")?;
+    config_map
+        .set(0, cfg, 0)
+        .context("Write GlobalConfig to BPF map")?;
     info!(
-        "XDP config updated: UDP={} pps, SYN={} pps, ICMP={} pps, DNS max={}B, frag={}, conntrack={}",
-        udp_pps, syn_flood, icmp_pps, dns_max_size, frag_policy, conntrack_enabled
+        "XDP config updated: UDP={} pps, SYN={} pps, ICMP={} pps, DNS max={}B",
+        udp_pps, syn_flood, icmp_pps, dns_max_size
     );
 
     Ok(())
 }
 
 /// Load ACL rules into the ACL_RULES BPF Array.
-pub fn load_acl_rules(
-    acl_map: &mut Array<MapData, AclRule>,
-    rules: &[crate::config::AclRuleConfig],
-) -> Result<usize> {
-    let mut count = 0;
+pub fn load_acl_rules(bpf: &mut Ebpf, rules: &[crate::config::AclRuleConfig]) -> Result<usize> {
+    let mut acl_map: Array<_, AclRule> = Array::try_from(
+        bpf.map_mut("ACL_RULES")
+            .context("ACL_RULES map not found")?,
+    )?;
 
+    let mut count = 0;
     for (i, rule) in rules.iter().enumerate() {
         if i >= MAX_ACL_RULES as usize {
-            warn!("Maximum ACL rules ({}) reached, ignoring remaining", MAX_ACL_RULES);
+            warn!(
+                "Maximum ACL rules ({}) reached, ignoring remaining",
+                MAX_ACL_RULES
+            );
             break;
         }
 
@@ -145,15 +181,15 @@ pub fn load_acl_rules(
             dst_port: rule.dst_port.unwrap_or(0),
             src_port: rule.src_port.unwrap_or(0),
             action,
-            direction: 2, // Both directions
+            direction: 2,
         };
 
-        acl_map.set(i as u32, bpf_rule, 0)
+        acl_map
+            .set(i as u32, bpf_rule, 0)
             .context(format!("Write ACL rule {} to BPF map", i))?;
         count += 1;
     }
 
-    // Disable remaining slots.
     for i in count..MAX_ACL_RULES as usize {
         let empty_rule = AclRule {
             priority: i as u32,
@@ -169,33 +205,6 @@ pub fn load_acl_rules(
 
     info!("Loaded {} ACL rules into XDP firewall", count);
     Ok(count)
-}
-
-/// Add a single IP to the blocklist (for runtime updates via API).
-pub fn block_ip(
-    blocklist_map: &mut HashMap<MapData, u32, u64>,
-    ip: Ipv4Addr,
-    expiry_ns: u64,
-) -> Result<()> {
-    let ip_u32 = u32::from(ip);
-    blocklist_map
-        .insert(ip_u32, expiry_ns, 0)
-        .context(format!("Block IP {}", ip))?;
-    info!("🔒 Blocked IP {} (expiry: {}ns)", ip, expiry_ns);
-    Ok(())
-}
-
-/// Remove a single IP from the blocklist.
-pub fn unblock_ip(
-    blocklist_map: &mut HashMap<MapData, u32, u64>,
-    ip: Ipv4Addr,
-) -> Result<()> {
-    let ip_u32 = u32::from(ip);
-    blocklist_map
-        .remove(&ip_u32)
-        .context(format!("Unblock IP {}", ip))?;
-    info!("🔓 Unblocked IP {}", ip);
-    Ok(())
 }
 
 /// Format a large number with comma separators.

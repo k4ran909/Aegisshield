@@ -1,5 +1,5 @@
-# AegisShield — config structs update
-# Updated config.go to match the fully wired daemon
+// AegisShield — config structs
+// Updated config.go to match the fully wired daemon
 package config
 
 import (
@@ -11,15 +11,15 @@ import (
 
 // Config is the top-level AegisShield configuration.
 type Config struct {
-	Thresholds   ThresholdConfig   `yaml:"thresholds"`
-	Blocklist    []string          `yaml:"blocklist"`
-	ACLRules     []ACLRuleConfig   `yaml:"acl_rules"`
-	Minecraft    MinecraftConfig   `yaml:"minecraft"`
+	Thresholds   ThresholdConfig    `yaml:"thresholds"`
+	Blocklist    []string           `yaml:"blocklist"`
+	ACLRules     []ACLRuleConfig    `yaml:"acl_rules"`
+	Minecraft    MinecraftConfig    `yaml:"minecraft"`
 	ControlPlane ControlPlaneConfig `yaml:"control_plane"`
-	Logging      LoggingConfig     `yaml:"logging"`
-	Alerts       AlertConfig       `yaml:"alerts"`
-	BGP          BGPConfig         `yaml:"bgp"`
-	Tunnel       TunnelConfig      `yaml:"tunnel"`
+	Logging      LoggingConfig      `yaml:"logging"`
+	Alerts       AlertConfig        `yaml:"alerts"`
+	BGP          BGPConfig          `yaml:"bgp"`
+	Tunnel       TunnelConfig       `yaml:"tunnel"`
 }
 
 type ThresholdConfig struct {
@@ -45,9 +45,9 @@ type MinecraftConfig struct {
 }
 
 type ControlPlaneConfig struct {
-	APIListen        string `yaml:"api_listen"`
-	MetricsListen    string `yaml:"metrics_listen"`
-	CooldownSeconds  uint64 `yaml:"cooldown_seconds"`
+	APIListen         string `yaml:"api_listen"`
+	MetricsListen     string `yaml:"metrics_listen"`
+	CooldownSeconds   uint64 `yaml:"cooldown_seconds"`
 	AutoBlockDuration uint64 `yaml:"auto_block_duration"`
 }
 
@@ -100,9 +100,9 @@ func Load(path string) (*Config, error) {
 			MaxPingRate: 5,
 		},
 		ControlPlane: ControlPlaneConfig{
-			APIListen:        "127.0.0.1:9090",
-			MetricsListen:    "0.0.0.0:9100",
-			CooldownSeconds:  60,
+			APIListen:         "127.0.0.1:9090",
+			MetricsListen:     "0.0.0.0:9100",
+			CooldownSeconds:   60,
 			AutoBlockDuration: 300,
 		},
 		Logging: LoggingConfig{

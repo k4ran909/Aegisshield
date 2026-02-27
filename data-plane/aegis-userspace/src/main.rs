@@ -1,26 +1,18 @@
-//! AegisShield Userspace Loader — Enhanced Version
+//! AegisShield Userspace Loader
 //!
-//! Responsibilities:
-//! 1. Load compiled eBPF bytecode and attach to NIC via XDP
-//! 2. Parse YAML configuration and populate BPF maps
-//! 3. Pin BPF maps to /sys/fs/bpf/aegis/ for control plane access
-//! 4. Monitor stats and print real-time dashboard
-//! 5. Watch config file for hot-reload changes
-//! 6. Rotate SYN cookie secret periodically
+//! Loads eBPF bytecode, attaches to NIC via XDP, and manages BPF maps.
 
 mod config;
 mod maps;
 
 use anyhow::{Context, Result};
-use aya::{include_bytes_aligned, Bpf};
 use aya::programs::{Xdp, XdpFlags};
-use aya::maps::{Array, HashMap, PerCpuArray};
+use aya::Ebpf;
 use clap::Parser;
-use log::{info, warn, error};
-use std::time::{Duration, Instant};
+use log::{info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use aegis_common::*;
+use std::time::{Duration, Instant};
 
 /// CLI arguments for the XDP loader.
 #[derive(Parser)]
@@ -39,7 +31,6 @@ struct Cli {
     config: String,
 
     /// Use XDP SKB mode instead of native driver mode.
-    /// SKB mode is slower but works on all interfaces (including veth).
     #[arg(long)]
     skb_mode: bool,
 
@@ -56,28 +47,39 @@ fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
 
-    println!(r#"
+    println!(
+        r#"
 ╔═══════════════════════════════════════════════╗
 ║        AegisShield XDP Data Plane             ║
 ║  eBPF/XDP Packet Filtering at Wire Speed      ║
 ╚═══════════════════════════════════════════════╝
-"#);
+"#
+    );
 
     // ── Load Configuration ───────────────────────────────────────
     info!("Loading configuration from: {}", cli.config);
-    let cfg = config::load_config(&cli.config)
-        .context("Failed to load configuration")?;
+    let cfg = config::load_config(&cli.config).context("Failed to load configuration")?;
 
     // ── Load eBPF Program ────────────────────────────────────────
     info!("Loading eBPF program...");
+
     #[cfg(debug_assertions)]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
-        "../../target/bpfel-unknown-none/debug/aegis-ebpf"
-    ))?;
+    let ebpf_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../target/bpfel-unknown-none/debug/aegis-ebpf"
+    );
     #[cfg(not(debug_assertions))]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
-        "../../target/bpfel-unknown-none/release/aegis-ebpf"
-    ))?;
+    let ebpf_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../target/bpfel-unknown-none/release/aegis-ebpf"
+    );
+
+    info!("Loading eBPF from: {}", ebpf_path);
+    let ebpf_bytes =
+        std::fs::read(ebpf_path).context(format!("Failed to read eBPF binary: {}", ebpf_path))?;
+    info!("eBPF binary size: {} bytes", ebpf_bytes.len());
+
+    let mut bpf = Ebpf::load(&ebpf_bytes).context("Failed to parse eBPF ELF object")?;
 
     // ── Attach XDP Program ───────────────────────────────────────
     let program: &mut Xdp = bpf.program_mut("aegis_xdp").unwrap().try_into()?;
@@ -91,53 +93,32 @@ fn main() -> Result<()> {
         XdpFlags::DRV_MODE
     };
 
-    program.attach(&cli.interface, flags)
-        .context(format!(
-            "Failed to attach XDP to {}. Try --skb-mode for compatibility.",
-            cli.interface
-        ))?;
+    program.attach(&cli.interface, flags).context(format!(
+        "Failed to attach XDP to {}. Try --skb-mode for compatibility.",
+        cli.interface
+    ))?;
 
     info!("✓ XDP program attached to {} successfully!", cli.interface);
 
     // ── Populate BPF Maps ────────────────────────────────────────
-    // Config map
-    let mut config_map: Array<_, GlobalConfig> = Array::try_from(
-        bpf.map_mut("CONFIG").context("CONFIG map not found")?
-    )?;
-
     let cookie_secret = generate_cookie_secret();
     maps::update_config(
-        &mut config_map,
+        &mut bpf,
         cfg.thresholds.udp_pps,
         cfg.thresholds.syn_flood,
         cfg.thresholds.icmp_pps,
         cfg.thresholds.dns_response_size,
-        1, // fragment_policy: drop all
-        true, // conntrack enabled
+        1,
+        true,
         cookie_secret,
     )?;
 
-    // Blocklist
-    let mut blocklist_map: HashMap<_, u32, u64> = HashMap::try_from(
-        bpf.map_mut("BLOCKLIST").context("BLOCKLIST map not found")?
-    )?;
-    maps::load_blocklist(&mut blocklist_map, &cfg.blocklist)?;
-
-    // ACL Rules
-    let mut acl_map: Array<_, AclRule> = Array::try_from(
-        bpf.map_mut("ACL_RULES").context("ACL_RULES map not found")?
-    )?;
-    maps::load_acl_rules(&mut acl_map, &cfg.acl_rules)?;
-
-    // Stats map (read-only from userspace)
-    let stats_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
-        bpf.map("STATS").context("STATS map not found")?
-    )?;
+    maps::load_blocklist(&mut bpf, &cfg.blocklist)?;
+    maps::load_acl_rules(&mut bpf, &cfg.acl_rules)?;
 
     // ── Pin Maps (optional) ──────────────────────────────────────
     if cli.pin_maps {
         info!("Pinning BPF maps to {}", maps::BPF_PIN_PATH);
-        // In production: use bpf.pin_maps(maps::BPF_PIN_PATH)
     }
 
     // ── Stats Reporting Loop ─────────────────────────────────────
@@ -146,29 +127,31 @@ fn main() -> Result<()> {
 
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
-    }).context("Failed to set Ctrl-C handler")?;
+    })
+    .context("Failed to set Ctrl-C handler")?;
 
-    info!("AegisShield is ACTIVE — protecting interface {}", cli.interface);
+    info!(
+        "AegisShield is ACTIVE — protecting interface {}",
+        cli.interface
+    );
     info!("Press Ctrl-C to stop");
 
     let stats_interval = Duration::from_secs(cli.stats_interval);
     let mut last_cookie_rotation = Instant::now();
-    let cookie_rotation_interval = Duration::from_secs(300); // Rotate every 5 minutes
+    let cookie_rotation_interval = Duration::from_secs(300);
 
     while running.load(Ordering::SeqCst) {
         std::thread::sleep(stats_interval);
 
-        // Read and display stats.
-        match maps::read_stats(&stats_map) {
+        match maps::read_stats(&bpf) {
             Ok(stats) => maps::print_stats_dashboard(&stats),
             Err(e) => warn!("Failed to read stats: {}", e),
         }
 
-        // Rotate SYN cookie secret periodically.
         if last_cookie_rotation.elapsed() >= cookie_rotation_interval {
             let new_secret = generate_cookie_secret();
             if let Err(e) = maps::update_config(
-                &mut config_map,
+                &mut bpf,
                 cfg.thresholds.udp_pps,
                 cfg.thresholds.syn_flood,
                 cfg.thresholds.icmp_pps,
@@ -193,8 +176,6 @@ fn main() -> Result<()> {
 
 /// Generate a pseudo-random SYN cookie secret.
 fn generate_cookie_secret() -> u32 {
-    // In production: use a CSPRNG.
-    // For now: use process start time as entropy source.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

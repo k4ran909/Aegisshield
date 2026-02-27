@@ -12,7 +12,6 @@ package bgp
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 

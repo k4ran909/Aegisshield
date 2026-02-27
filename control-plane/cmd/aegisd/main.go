@@ -88,7 +88,7 @@ func main() {
 	logger.Infow("✓ Anomaly Detector initialized (learning for 60s)")
 
 	// ── Mitigation Engine ────────────────────────────────────────
-	mitigationEngine := engine.NewEngine(cfg, bpfMgr, logger)
+	mitigationEngine := engine.New(cfg, bpfMgr, logger)
 	logger.Info("✓ Mitigation Engine initialized")
 
 	// ── Auto-Responder ───────────────────────────────────────────

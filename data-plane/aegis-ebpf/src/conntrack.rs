@@ -1,21 +1,11 @@
 //! Lightweight Connection Tracking in BPF Maps
 //!
-//! Tracks established TCP connections to allow reverse traffic
-//! (server → client responses) without rate limiting.
-//! This prevents legitimate response traffic from being falsely
-//! rate-limited or dropped.
-//!
-//! Design:
-//! - Outbound SYN packets create a conntrack entry.
-//! - Inbound packets matching a conntrack entry skip flood filters.
-//! - Entries expire via LRU eviction after inactivity.
-//! - Only tracks 5-tuple: (protocol, src_ip, dst_ip, src_port, dst_port).
+//! Tracks established TCP/UDP connections to allow reverse traffic
+//! without rate limiting. Entries expire via LRU eviction.
 
 use aya_ebpf::maps::LruHashMap;
-use aegis_common::*;
 
-/// Connection tracking key (5-tuple hash).
-/// Compact 16-byte key for BPF HashMap.
+/// Connection tracking key (5-tuple).
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ConnTrackKey {
@@ -24,7 +14,7 @@ pub struct ConnTrackKey {
     pub src_port: u16,
     pub dst_port: u16,
     pub protocol: u8,
-    pub _pad: [u8; 3], // Align to 4 bytes
+    pub _pad: [u8; 3],
 }
 
 /// Connection tracking value.
@@ -34,7 +24,7 @@ pub struct ConnTrackValue {
     pub last_seen_ns: u64,
     pub packets: u64,
     pub bytes: u64,
-    pub state: u8,          // See ConnState below
+    pub state: u8,
     pub _pad: [u8; 7],
 }
 
@@ -44,12 +34,10 @@ pub struct ConnTrackValue {
 pub enum ConnState {
     New = 0,
     Established = 1,
-    TimeWait = 2,
+    _TimeWait = 2,
 }
 
-/// Check if a packet belongs to an established/known connection.
-///
-/// Returns `true` if the packet is part of a tracked connection.
+/// Check if a packet belongs to a tracked connection.
 #[inline(always)]
 pub fn is_tracked(
     conntrack: &LruHashMap<ConnTrackKey, ConnTrackValue>,
@@ -68,12 +56,11 @@ pub fn is_tracked(
         _pad: [0u8; 3],
     };
 
-    // Check forward direction.
     if unsafe { conntrack.get(&key) }.is_some() {
         return true;
     }
 
-    // Check reverse direction (response to our outbound traffic).
+    // Check reverse direction.
     let rev_key = ConnTrackKey {
         src_ip: dst_ip,
         dst_ip: src_ip,
@@ -110,7 +97,6 @@ pub fn track_connection(
 
     match unsafe { conntrack.get(&key) } {
         Some(existing) => {
-            // Update existing entry.
             let new_val = ConnTrackValue {
                 last_seen_ns: now_ns,
                 packets: existing.packets + 1,
@@ -121,7 +107,6 @@ pub fn track_connection(
             let _ = conntrack.insert(&key, &new_val, 0);
         }
         None => {
-            // Create new entry.
             let val = ConnTrackValue {
                 last_seen_ns: now_ns,
                 packets: 1,
@@ -134,15 +119,11 @@ pub fn track_connection(
     }
 }
 
-/// Check if a TCB SYN+ACK should create a conntrack entry.
-/// Only track when we see a SYN going out or an established ACK.
+/// Check if TCP flags warrant creating a conntrack entry.
 #[inline(always)]
 pub fn should_track_tcp(tcp_flags: u8) -> bool {
     let syn = (tcp_flags & 0x02) != 0;
     let ack = (tcp_flags & 0x10) != 0;
     let rst = (tcp_flags & 0x04) != 0;
-
-    // Track: SYN (new outbound), SYN+ACK (new inbound), ACK (data)
-    // Don't track: RST (connection closing)
     !rst && (syn || ack)
 }

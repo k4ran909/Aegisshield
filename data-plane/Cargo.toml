@@ -1,5 +1,5 @@
 [workspace]
-members = ["aegis-ebpf", "aegis-userspace"]
+members = ["aegis-ebpf", "aegis-userspace", "xtask"]
 resolver = "2"
 
 [workspace.dependencies]

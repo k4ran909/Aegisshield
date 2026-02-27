@@ -1,52 +1,44 @@
-//! AegisShield XDP Data Plane — Main Entry Point (Refactored)
+//! AegisShield XDP Data Plane — Main Entry Point
 //!
-//! This is the core XDP program that processes every packet at wire speed.
-//! It chains all filter modules in a fixed priority order:
-//!
-//! 1. IP Blocklist         (instant DROP for known-bad IPs)
-//! 2. Fragment Filter      (drop fragmented packets)
-//! 3. Connection Tracking  (bypass filters for established connections)
-//! 4. ACL Engine           (Edge Network Firewall rules)
-//! 5. Protocol Filters     (SYN proxy, UDP rate limit, DNS amp, ICMP, GRE)
-//! 6. Stats Collection     (per-CPU counters for all decisions)
-//!
-//! If a packet passes all filters, it is XDP_PASS'd to the kernel stack.
+//! Core XDP program that processes every packet at wire speed.
+//! Pipeline stages:
+//!   1. IP Blocklist → 2. Fragment Filter → 3. Connection Tracking
+//!   4. ACL Engine → 5. Protocol Filters → 6. Stats Collection
 
 #![no_std]
 #![no_main]
+#![allow(dead_code)]
 
 mod acl;
+mod conntrack;
+mod dns_filter;
+mod fragment_filter;
+mod gre_filter;
+mod icmp_filter;
 mod syn_proxy;
 mod udp_filter;
-mod dns_filter;
-mod icmp_filter;
-mod gre_filter;
-mod fragment_filter;
-mod conntrack;
 
+use aegis_common::*;
 use aya_ebpf::{
     bindings::xdp_action,
+    helpers::bpf_ktime_get_ns,
     macros::{map, xdp},
     maps::{Array, HashMap, LruHashMap, PerCpuArray},
     programs::XdpContext,
-    helpers::bpf_ktime_get_ns,
 };
-use aya_log_ebpf::info;
 use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
-    ip::Ipv4Hdr,
+    ip::{IpProto, Ipv4Hdr},
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use aegis_common::*;
 
 // ═══════════════════════════════════════════════════════════════════
 // BPF Maps — Shared between kernel and userspace
 // ═══════════════════════════════════════════════════════════════════
 
-/// IP Blocklist — HashMap of blocked IP addresses.
-/// Key: IPv4 address (u32), Value: block expiry timestamp (u64)
+/// IP Blocklist — blocked IP addresses with expiry timestamps.
 #[map]
 static BLOCKLIST: HashMap<u32, u64> = HashMap::with_max_entries(BLOCKLIST_SIZE, 0);
 
@@ -54,7 +46,7 @@ static BLOCKLIST: HashMap<u32, u64> = HashMap::with_max_entries(BLOCKLIST_SIZE, 
 #[map]
 static CONFIG: Array<GlobalConfig> = Array::with_max_entries(1, 0);
 
-/// Edge Network Firewall ACL rules (priority-ordered array).
+/// Edge Network Firewall ACL rules (priority-ordered).
 #[map]
 static ACL_RULES: Array<AclRule> = Array::with_max_entries(MAX_ACL_RULES, 0);
 
@@ -79,11 +71,9 @@ static GRE_WHITELIST: HashMap<u32, u8> = HashMap::with_max_entries(256, 0);
 
 /// DNS outbound query tracker (TxID → timestamp).
 #[map]
-static DNS_QUERIES: LruHashMap<u16, u64> =
-    LruHashMap::with_max_entries(16384, 0);
+static DNS_QUERIES: LruHashMap<u16, u64> = LruHashMap::with_max_entries(16384, 0);
 
 /// SYN flood rate counter (per-CPU for lock-free tracking).
-/// Index 0: count, Index 1: window start timestamp.
 #[map]
 static SYN_COUNTER: PerCpuArray<u64> = PerCpuArray::with_max_entries(2, 0);
 
@@ -92,10 +82,7 @@ static SYN_COUNTER: PerCpuArray<u64> = PerCpuArray::with_max_entries(2, 0);
 static CONNTRACK: LruHashMap<conntrack::ConnTrackKey, conntrack::ConnTrackValue> =
     LruHashMap::with_max_entries(CONNTRACK_SIZE, 0);
 
-/// Per-CPU aggregate statistics.
-/// Indices: 0=rx, 1=drop, 2=pass, 3=tx, 4=blocklist_drops,
-///          5=acl_drops, 6=udp_drops, 7=syn_drops, 8=icmp_drops,
-///          9=dns_drops, 10=gre_drops, 11=frag_drops, 12=conntrack_bypass
+/// Per-CPU aggregate statistics (16 counters).
 #[map]
 static STATS: PerCpuArray<u64> = PerCpuArray::with_max_entries(16, 0);
 
@@ -107,7 +94,7 @@ static STATS: PerCpuArray<u64> = PerCpuArray::with_max_entries(16, 0);
 pub fn aegis_xdp(ctx: XdpContext) -> u32 {
     match process_packet(&ctx) {
         Ok(action) => action,
-        Err(_) => xdp_action::XDP_PASS, // Parse error — pass to stack
+        Err(_) => xdp_action::XDP_PASS,
     }
 }
 
@@ -121,33 +108,39 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
 
     // ── Parse Ethernet Header ───────────────────────────────────
     let eth_hdr = ptr_at::<EthHdr>(ctx, 0)?;
-    let eth_hdr_ref = unsafe { &*eth_hdr };
-
-    // Only process IPv4 for now (IPv6 support is Phase 2+).
-    if eth_hdr_ref.ether_type != EtherType::Ipv4 {
+    // EthHdr is packed (1-byte aligned); use addr_of! + read_unaligned.
+    let ether_type =
+        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*eth_hdr).ether_type)) };
+    if ether_type != EtherType::Ipv4 {
         inc_stat(2); // STAT_PASS
         return Ok(xdp_action::XDP_PASS);
     }
 
     // ── Parse IPv4 Header ───────────────────────────────────────
     let ip_hdr = ptr_at::<Ipv4Hdr>(ctx, mem::size_of::<EthHdr>())?;
-    let ip_hdr_ref = unsafe { &*ip_hdr };
-
-    let src_ip = u32::from_be(ip_hdr_ref.src_addr);
-    let dst_ip = u32::from_be(ip_hdr_ref.dst_addr);
-    let protocol = ip_hdr_ref.proto;
-    let ip_total_len = u16::from_be(ip_hdr_ref.tot_len);
-    let frag_flags = ip_hdr_ref.frag_off;
+    let src_ip = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*ip_hdr).src_addr)) };
+    let dst_ip = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*ip_hdr).dst_addr)) };
+    let protocol = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*ip_hdr).proto)) };
+    let proto_u8 = protocol as u8;
+    let ip_total_len = unsafe {
+        u16::from_be(core::ptr::read_unaligned(core::ptr::addr_of!(
+            (*ip_hdr).tot_len
+        )))
+    };
+    let frag_flags = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*ip_hdr).frag_off)) };
+    let src_ip_host = u32::from_be(src_ip);
+    let _dst_ip_host = u32::from_be(dst_ip);
 
     // ── Stage 1: IP Blocklist ───────────────────────────────────
-    if unsafe { BLOCKLIST.get(&src_ip) }.is_some() {
+    if unsafe { BLOCKLIST.get(&src_ip_host) }.is_some() {
         inc_stat(1); // STAT_DROP
         inc_stat(4); // STAT_BLOCKLIST_DROP
         return Ok(xdp_action::XDP_DROP);
     }
 
     // ── Stage 2: Fragment Filter ────────────────────────────────
-    if fragment_filter::should_drop_fragment(frag_flags, ip_hdr_ref.tot_len) {
+    let raw_tot_len = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*ip_hdr).tot_len)) };
+    if fragment_filter::should_drop_fragment(frag_flags, raw_tot_len) {
         inc_stat(1); // STAT_DROP
         inc_stat(11); // STAT_FRAG_DROP
         return Ok(xdp_action::XDP_DROP);
@@ -155,42 +148,50 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
 
     // ── Load Configuration ──────────────────────────────────────
     let config = match CONFIG.get(0) {
-        Some(c) => unsafe { &*c },
-        None => return Ok(xdp_action::XDP_PASS), // No config = pass all
+        Some(c) => c,
+        None => return Ok(xdp_action::XDP_PASS),
     };
 
     // ── Parse L4 Headers ────────────────────────────────────────
-    let ip_hdr_len = ((unsafe { *((ctx.data() + mem::size_of::<EthHdr>()) as *const u8) } & 0x0F) as usize) * 4;
+    let ihl_ptr = ptr_at::<u8>(ctx, mem::size_of::<EthHdr>())?;
+    let ihl_byte = unsafe { *ihl_ptr };
+    let ip_hdr_len = ((ihl_byte & 0x0F) as usize) * 4;
     let l4_offset = mem::size_of::<EthHdr>() + ip_hdr_len;
 
     let (src_port, dst_port) = match protocol {
-        6 => {
-            // TCP
+        IpProto::Tcp => {
             let tcp_hdr = ptr_at::<TcpHdr>(ctx, l4_offset)?;
-            let tcp_ref = unsafe { &*tcp_hdr };
-            (u16::from_be(tcp_ref.source), u16::from_be(tcp_ref.dest))
+            let src = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_hdr).source)) };
+            let dst = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_hdr).dest)) };
+            (u16::from_be(src), u16::from_be(dst))
         }
-        17 => {
-            // UDP
+        IpProto::Udp => {
             let udp_hdr = ptr_at::<UdpHdr>(ctx, l4_offset)?;
-            let udp_ref = unsafe { &*udp_hdr };
-            (u16::from_be(udp_ref.source), u16::from_be(udp_ref.dest))
+            let src = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*udp_hdr).source)) };
+            let dst = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*udp_hdr).dest)) };
+            (u16::from_be(src), u16::from_be(dst))
         }
         _ => (0u16, 0u16),
     };
 
     // ── Stage 3: Connection Tracking ────────────────────────────
-    // If packet belongs to a known connection, bypass flood filters.
-    if protocol == 6 || protocol == 17 {
-        if conntrack::is_tracked(&CONNTRACK, protocol, src_ip, dst_ip, src_port, dst_port) {
-            inc_stat(2);  // STAT_PASS
+    if matches!(protocol, IpProto::Tcp | IpProto::Udp) {
+        if conntrack::is_tracked(
+            &CONNTRACK,
+            proto_u8,
+            src_ip_host,
+            _dst_ip_host,
+            src_port,
+            dst_port,
+        ) {
+            inc_stat(2); // STAT_PASS
             inc_stat(12); // STAT_CONNTRACK_BYPASS
             return Ok(xdp_action::XDP_PASS);
         }
     }
 
     // ── Stage 4: ACL Engine ─────────────────────────────────────
-    if let Some(allowed) = acl::evaluate_acl(&ACL_RULES, protocol, src_port, dst_port) {
+    if let Some(allowed) = acl::evaluate_acl(&ACL_RULES, proto_u8, src_port, dst_port) {
         if !allowed {
             inc_stat(1); // STAT_DROP
             inc_stat(5); // STAT_ACL_DROP
@@ -200,26 +201,19 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
 
     // ── Stage 5: Protocol-Specific Filters ──────────────────────
     match protocol {
-        6 => {
+        IpProto::Tcp => {
             // TCP — SYN flood detection
             let tcp_hdr = ptr_at::<TcpHdr>(ctx, l4_offset)?;
-            let tcp_ref = unsafe { &*tcp_hdr };
-            let flags = unsafe { *((&*tcp_hdr as *const TcpHdr as *const u8).add(13)) };
+            let flags = unsafe { *((ctx.data() + l4_offset + 13) as *const u8) };
             let is_syn = (flags & 0x02) != 0 && (flags & 0x10) == 0;
 
             if is_syn {
-                // Check if SYN flood is active.
-                let flood_active = syn_proxy::check_syn_flood(
-                    &SYN_COUNTER,
-                    config.syn_flood_threshold,
-                    now_ns,
-                );
+                let flood_active =
+                    syn_proxy::check_syn_flood(&SYN_COUNTER, config.syn_flood_threshold, now_ns);
 
                 if flood_active {
                     inc_stat(1); // STAT_DROP
                     inc_stat(7); // STAT_SYN_DROP
-                    // In production: XDP_TX with SYN cookie response.
-                    // For now: DROP to protect against flood.
                     return Ok(xdp_action::XDP_DROP);
                 }
             }
@@ -228,18 +222,30 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             if conntrack::should_track_tcp(flags) {
                 conntrack::track_connection(
                     &CONNTRACK,
-                    protocol, src_ip, dst_ip, src_port, dst_port,
-                    now_ns, ip_total_len as u64,
-                    if is_syn { conntrack::ConnState::New } else { conntrack::ConnState::Established },
+                    proto_u8,
+                    src_ip_host,
+                    _dst_ip_host,
+                    src_port,
+                    dst_port,
+                    now_ns,
+                    ip_total_len as u64,
+                    if is_syn {
+                        conntrack::ConnState::New
+                    } else {
+                        conntrack::ConnState::Established
+                    },
                 );
             }
+
+            // Suppress unused variable warning for tcp_hdr (used for bounds check).
+            let _ = tcp_hdr;
         }
 
-        17 => {
+        IpProto::Udp => {
             // UDP — Multi-layer filtering
             let udp_hdr = ptr_at::<UdpHdr>(ctx, l4_offset)?;
-            let udp_ref = unsafe { &*udp_hdr };
-            let udp_payload_len = u16::from_be(udp_ref.len).saturating_sub(8);
+            let udp_len = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*udp_hdr).len)) };
+            let udp_payload_len = u16::from_be(udp_len).saturating_sub(8);
 
             // Check amplification first (source port based).
             if udp_filter::is_amplification_suspect(src_port, udp_payload_len) {
@@ -251,15 +257,16 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             // DNS deep inspection (dst_port 53 or src_port 53).
             if src_port == 53 || dst_port == 53 {
                 let dns_offset = l4_offset + mem::size_of::<UdpHdr>();
-                if ctx.data() + dns_offset + mem::size_of::<dns_filter::DnsHeader>() <= ctx.data_end() {
-                    let dns_hdr = unsafe {
-                        &*((ctx.data() + dns_offset) as *const dns_filter::DnsHeader)
-                    };
+                if ctx.data() + dns_offset + mem::size_of::<dns_filter::DnsHeader>()
+                    <= ctx.data_end()
+                {
+                    let dns_hdr =
+                        unsafe { &*((ctx.data() + dns_offset) as *const dns_filter::DnsHeader) };
 
                     if dns_filter::check_dns_amplification(
                         dns_hdr,
                         udp_payload_len,
-                        src_ip,
+                        src_ip_host,
                         config.dns_max_response_size,
                         &DNS_QUERIES,
                     ) {
@@ -271,20 +278,16 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             }
 
             // Per-IP UDP rate limiting with port-specific thresholds.
-            let threshold = udp_filter::get_port_threshold(
-                dst_port,
-                config.udp_rate_threshold,
-            );
+            let threshold = udp_filter::get_port_threshold(dst_port, config.udp_rate_threshold);
 
-            if udp_filter::check_udp_rate(&UDP_RATE, src_ip, threshold, now_ns) {
+            if udp_filter::check_udp_rate(&UDP_RATE, src_ip_host, threshold, now_ns) {
                 inc_stat(1); // STAT_DROP
                 inc_stat(6); // STAT_UDP_DROP
                 return Ok(xdp_action::XDP_DROP);
             }
         }
 
-        1 => {
-            // ICMP
+        IpProto::Icmp => {
             if ctx.data() + l4_offset + 2 <= ctx.data_end() {
                 let icmp_type = unsafe { *((ctx.data() + l4_offset) as *const u8) };
                 let icmp_code = unsafe { *((ctx.data() + l4_offset + 1) as *const u8) };
@@ -292,7 +295,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
 
                 match icmp_filter::check_icmp(
                     &ICMP_RATE,
-                    src_ip,
+                    src_ip_host,
                     icmp_type,
                     icmp_code,
                     icmp_payload_len,
@@ -309,33 +312,29 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             }
         }
 
-        47 => {
+        _ if proto_u8 == 47 => {
             // GRE (Protocol 47)
             if ctx.data() + l4_offset + mem::size_of::<gre_filter::GreHeader>() <= ctx.data_end() {
-                let gre_hdr = unsafe {
-                    &*((ctx.data() + l4_offset) as *const gre_filter::GreHeader)
-                };
+                let gre_hdr =
+                    unsafe { &*((ctx.data() + l4_offset) as *const gre_filter::GreHeader) };
 
-                // GRE rate is 1/10th of UDP threshold by default.
                 let gre_threshold = config.udp_rate_threshold / 10;
                 if gre_filter::check_gre(
                     &GRE_RATE,
                     &GRE_WHITELIST,
-                    src_ip,
+                    src_ip_host,
                     gre_hdr,
                     gre_threshold,
                     now_ns,
                 ) {
-                    inc_stat(1);  // STAT_DROP
+                    inc_stat(1); // STAT_DROP
                     inc_stat(10); // STAT_GRE_DROP
                     return Ok(xdp_action::XDP_DROP);
                 }
             }
         }
 
-        _ => {
-            // Unknown protocol — pass to kernel.
-        }
+        _ => {}
     }
 
     // ── Packet passed all filters ───────────────────────────────

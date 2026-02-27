@@ -1,19 +1,19 @@
 // Package api provides the gRPC and REST API for the AegisShield daemon.
 //
 // Endpoints:
-//   GET  /api/v1/status       — Current protection state + stats
-//   GET  /api/v1/attacks      — Attack history
-//   GET  /api/v1/baselines    — Anomaly detector baselines
-//   POST /api/v1/block        — Block an IP address
-//   POST /api/v1/unblock      — Unblock an IP address
-//   GET  /api/v1/rules        — List ACL rules
-//   POST /api/v1/config/reload — Hot-reload configuration
-//   GET  /api/v1/blocklist    — List all blocked IPs
+//
+//	GET  /api/v1/status       — Current protection state + stats
+//	GET  /api/v1/attacks      — Attack history
+//	GET  /api/v1/baselines    — Anomaly detector baselines
+//	POST /api/v1/block        — Block an IP address
+//	POST /api/v1/unblock      — Unblock an IP address
+//	GET  /api/v1/rules        — List ACL rules
+//	POST /api/v1/config/reload — Hot-reload configuration
+//	GET  /api/v1/blocklist    — List all blocked IPs
 package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -79,12 +79,12 @@ func (s *Server) Start() error {
 // ── Status ───────────────────────────────────────────────────────
 
 type StatusResponse struct {
-	State          string  `json:"state"`
-	Uptime         string  `json:"uptime"`
-	Learning       bool    `json:"learning"`
-	ActiveActions  int     `json:"active_actions"`
-	BlockedIPs     int     `json:"blocked_ips"`
-	Stats          *bpf.Stats `json:"stats,omitempty"`
+	State         string     `json:"state"`
+	Uptime        string     `json:"uptime"`
+	Learning      bool       `json:"learning"`
+	ActiveActions int        `json:"active_actions"`
+	BlockedIPs    int        `json:"blocked_ips"`
+	Stats         *bpf.Stats `json:"stats,omitempty"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
