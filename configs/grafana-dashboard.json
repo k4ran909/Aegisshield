@@ -1,0 +1,120 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "🛡️ AegisShield — Protection Status",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "aegis_attack_state", "legendFormat": "Attack State" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "NORMAL", "color": "green" }, "1": { "text": "DETECTED", "color": "yellow" }, "2": { "text": "MITIGATING", "color": "red" }, "3": { "text": "COOLDOWN", "color": "blue" } } }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Current PPS",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "targets": [{ "expr": "aegis_current_pps", "legendFormat": "RX PPS" }],
+      "fieldConfig": { "defaults": { "unit": "pps" } }
+    },
+    {
+      "title": "Drop Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "targets": [{ "expr": "aegis_current_drop_pps", "legendFormat": "Drop PPS" }],
+      "fieldConfig": { "defaults": { "unit": "pps", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 100, "color": "yellow" }, { "value": 1000, "color": "red" }] } } }
+    },
+    {
+      "title": "Blocked IPs",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "targets": [{ "expr": "aegis_blocked_ips", "legendFormat": "Blocked" }],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "red" } } }
+    },
+    {
+      "title": "Conntrack Entries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
+      "targets": [{ "expr": "aegis_conntrack_entries", "legendFormat": "Entries" }]
+    },
+    {
+      "title": "Attacks Detected",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "aegis_attacks_detected_total", "legendFormat": "Total" }],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "orange" } } }
+    },
+    {
+      "title": "📊 Packet Throughput",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "rate(aegis_rx_packets_total[1m])", "legendFormat": "RX" },
+        { "expr": "rate(aegis_dropped_packets_total[1m])", "legendFormat": "Dropped" },
+        { "expr": "rate(aegis_passed_packets_total[1m])", "legendFormat": "Passed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "pps" } }
+    },
+    {
+      "title": "🔥 Drop Breakdown by Filter",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "rate(aegis_blocklist_drops_total[1m])", "legendFormat": "Blocklist" },
+        { "expr": "rate(aegis_acl_drops_total[1m])", "legendFormat": "ACL" },
+        { "expr": "rate(aegis_udp_drops_total[1m])", "legendFormat": "UDP Rate" },
+        { "expr": "rate(aegis_syn_drops_total[1m])", "legendFormat": "SYN Flood" },
+        { "expr": "rate(aegis_icmp_drops_total[1m])", "legendFormat": "ICMP" },
+        { "expr": "rate(aegis_dns_amp_drops_total[1m])", "legendFormat": "DNS Amp" },
+        { "expr": "rate(aegis_gre_drops_total[1m])", "legendFormat": "GRE" },
+        { "expr": "rate(aegis_frag_drops_total[1m])", "legendFormat": "Fragments" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "pps", "custom": { "fillOpacity": 30, "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "title": "🕐 Attack Duration Distribution",
+      "type": "histogram",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "targets": [{ "expr": "aegis_attack_duration_seconds_bucket", "legendFormat": "{{le}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "title": "🎮 Minecraft Bot Scores (Top IPs)",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 12 },
+      "targets": [{ "expr": "topk(10, aegis_mc_bot_score)", "legendFormat": "{{ip}}" }]
+    },
+    {
+      "title": "🎮 Minecraft Connection Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "targets": [{ "expr": "aegis_mc_connections_per_sec", "legendFormat": "Conn/s" }]
+    },
+    {
+      "title": "📈 SYN Cookies Sent vs SYN Drops",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "targets": [
+        { "expr": "rate(aegis_syn_drops_total[1m])", "legendFormat": "SYN Drops" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ddos", "security", "aegisshield"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AegisShield — DDoS Protection Dashboard",
+  "uid": "aegisshield-overview",
+  "version": 1
+}

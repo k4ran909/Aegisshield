@@ -1,0 +1,27 @@
+[workspace]
+members = ["aegis-ebpf", "aegis-userspace"]
+resolver = "2"
+
+[workspace.dependencies]
+aya = "0.13"
+aya-ebpf = "0.1"
+aya-log = "0.2"
+aya-log-ebpf = "0.1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+libc = "0.2"
+
+[profile.dev]
+opt-level = 3
+debug = false
+overflow-checks = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

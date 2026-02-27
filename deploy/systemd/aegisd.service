@@ -1,0 +1,31 @@
+[Unit]
+Description=AegisShield Control Plane Daemon
+Documentation=https://github.com/aegisshield/aegisshield
+After=network.target aegis-xdp.service
+Wants=aegis-xdp.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/aegisd /etc/aegisshield/aegis.yaml
+ExecReload=/bin/kill -SIGHUP $MAINPID
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/sys/fs/bpf /var/log/aegisshield
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aegisd
+
+[Install]
+WantedBy=multi-user.target

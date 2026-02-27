@@ -1,0 +1,21 @@
+[package]
+name = "aegis-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aegis-ebpf"
+path = "src/main.rs"
+
+[dependencies]
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+aegis-common = { path = "../aegis-common" }
+network-types = "0.0.7"
+
+[build-dependencies]
+
+[profile.dev]
+opt-level = 3
+debug = false
+overflow-checks = false

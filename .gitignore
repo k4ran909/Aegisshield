@@ -1,0 +1,43 @@
+# Rust
+/data-plane/target/
+**/*.rs.bk
+
+# Go
+/control-plane/bin/
+/control-plane/vendor/
+
+# Build artifacts
+*.o
+*.bc
+*.ll
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TLS certs
+l7-proxy/certs/*.pem
+l7-proxy/certs/*.key
+l7-proxy/certs/*.crt
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# BPF pins
+/sys/fs/bpf/aegis/
+
+# Dashboard
+dashboard/frontend/node_modules/
+dashboard/frontend/.next/
+dashboard/frontend/out/

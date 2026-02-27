@@ -1,0 +1,90 @@
+# ═══════════════════════════════════════════════════════════════════
+# AegisShield — Master Configuration
+# ═══════════════════════════════════════════════════════════════════
+#
+# This is the primary configuration file for AegisShield.
+# All values have sensible defaults — customize only what you need.
+
+# ── Rate Limiting Thresholds ──────────────────────────────────────
+thresholds:
+  udp_pps: 1000            # UDP packets/sec per-IP before rate limiting
+  syn_flood: 5000          # Global SYN packets/sec before activating SYNPROXY
+  icmp_pps: 50             # ICMP echo requests/sec per-IP
+  dns_response_size: 512   # Max DNS response size (bytes) before dropping
+
+# ── IP Blocklist ──────────────────────────────────────────────────
+# IPs listed here are immediately dropped at XDP level (wire speed).
+blocklist: []
+  # - "192.168.1.100"
+  # - "10.0.0.50"
+
+# ── Edge Network Firewall ACL Rules ──────────────────────────────
+# Lower priority number = higher precedence.
+acl_rules:
+  - priority: 10
+    protocol: tcp
+    dst_port: 22
+    action: allow           # Allow SSH
+
+  - priority: 20
+    protocol: tcp
+    dst_port: 443
+    action: allow           # Allow HTTPS
+
+  - priority: 30
+    protocol: tcp
+    dst_port: 80
+    action: allow           # Allow HTTP
+
+  - priority: 100
+    protocol: tcp
+    dst_port: 25565
+    action: allow           # Allow Minecraft
+
+  - priority: 200
+    protocol: udp
+    dst_port: 19132
+    action: allow           # Allow Minecraft Bedrock
+
+# ── Control Plane ─────────────────────────────────────────────────
+control_plane:
+  api_listen: "127.0.0.1:9090"     # REST API (localhost only)
+  metrics_listen: "0.0.0.0:9100"   # Prometheus metrics
+  cooldown_seconds: 60             # Seconds after attack before returning to NORMAL
+  auto_block_duration: 300         # Seconds to auto-block offending IPs
+
+# ── Alert Notifications ──────────────────────────────────────────
+alerts:
+  discord_webhook: ""              # Discord webhook URL
+  telegram_bot_token: ""           # Telegram bot token
+  telegram_chat_id: ""             # Telegram chat/channel ID
+
+# ── Minecraft Protection ─────────────────────────────────────────
+minecraft:
+  enabled: true
+  server_port: 25565
+  max_conn_rate: 10                # Max new connections per second per IP
+  max_ping_rate: 5                 # Max SLP (Server List Ping) per second per IP
+
+# ── BGP (Optional — for multi-node Anycast) ──────────────────────
+bgp:
+  enabled: false
+  local_asn: 0                     # Your ASN
+  router_id: "0.0.0.0"            # BGP Router ID
+  anycast_prefix: ""               # e.g., "203.0.113.0/24"
+
+# ── Clean Traffic Tunnel (Optional) ──────────────────────────────
+tunnel:
+  enabled: false
+  type: "gre"                      # gre, ipip, or wireguard
+  local_ip: ""
+  remote_ip: ""
+  interface_name: "aegis0"
+  mtu: 1476
+  keepalive_interval: 10           # seconds
+
+# ── Logging ───────────────────────────────────────────────────────
+logging:
+  level: "info"                    # debug, info, warn, error
+  output: "stdout"                 # stdout, file
+  file_path: "/var/log/aegis.log"

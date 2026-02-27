@@ -1,0 +1,28 @@
+[Unit]
+Description=AegisShield XDP Data Plane
+Documentation=https://github.com/aegisshield/aegisshield
+After=network.target
+Before=aegisd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/aegis-loader --interface eth0 --config /etc/aegisshield/aegis.yaml
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=false
+# XDP requires CAP_BPF + CAP_NET_ADMIN + CAP_SYS_ADMIN
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/sys/fs/bpf
+
+# Resource limits
+LimitMEMLOCK=infinity
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

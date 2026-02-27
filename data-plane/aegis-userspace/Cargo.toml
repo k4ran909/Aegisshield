@@ -1,0 +1,21 @@
+[package]
+name = "aegis-userspace"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aegis-loader"
+path = "src/main.rs"
+
+[dependencies]
+aya = { workspace = true, features = ["async_tokio"] }
+aya-log = { workspace = true }
+aegis-common = { path = "../aegis-common", features = ["userspace"] }
+anyhow = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+libc = { workspace = true }
