@@ -1,90 +1,81 @@
-# ═══════════════════════════════════════════════════════════════════
-# AegisShield — Master Configuration
-# ═══════════════════════════════════════════════════════════════════
-#
-# This is the primary configuration file for AegisShield.
-# All values have sensible defaults — customize only what you need.
+# AegisShield master configuration (secure defaults).
 
-# ── Rate Limiting Thresholds ──────────────────────────────────────
 thresholds:
-  udp_pps: 1000            # UDP packets/sec per-IP before rate limiting
-  syn_flood: 5000          # Global SYN packets/sec before activating SYNPROXY
-  icmp_pps: 50             # ICMP echo requests/sec per-IP
-  dns_response_size: 512   # Max DNS response size (bytes) before dropping
+  udp_pps: 1000
+  syn_flood: 5000
+  icmp_pps: 50
+  dns_response_size: 512
 
-# ── IP Blocklist ──────────────────────────────────────────────────
-# IPs listed here are immediately dropped at XDP level (wire speed).
+# XDP behavior flags
+# fragment_policy: 0=disabled, 1=drop-all (default), 2=selective
+fragment_policy: 1
+conntrack_enabled: true
+
 blocklist: []
-  # - "192.168.1.100"
-  # - "10.0.0.50"
 
-# ── Edge Network Firewall ACL Rules ──────────────────────────────
-# Lower priority number = higher precedence.
+# Lower number = higher priority.
 acl_rules:
   - priority: 10
     protocol: tcp
     dst_port: 22
-    action: allow           # Allow SSH
-
+    action: allow
   - priority: 20
     protocol: tcp
     dst_port: 443
-    action: allow           # Allow HTTPS
-
+    action: allow
   - priority: 30
     protocol: tcp
     dst_port: 80
-    action: allow           # Allow HTTP
-
+    action: allow
   - priority: 100
     protocol: tcp
     dst_port: 25565
-    action: allow           # Allow Minecraft
-
+    action: allow
   - priority: 200
     protocol: udp
     dst_port: 19132
-    action: allow           # Allow Minecraft Bedrock
+    action: allow
 
-# ── Control Plane ─────────────────────────────────────────────────
 control_plane:
-  api_listen: "127.0.0.1:9090"     # REST API (localhost only)
-  metrics_listen: "0.0.0.0:9100"   # Prometheus metrics
-  cooldown_seconds: 60             # Seconds after attack before returning to NORMAL
-  auto_block_duration: 300         # Seconds to auto-block offending IPs
+  api_listen: "127.0.0.1:9090"
+  metrics_listen: "127.0.0.1:9100"
+  cooldown_seconds: 60
+  auto_block_duration: 300
+  expose_remote: false
+  auth_token: ""
+  allowed_origins: []
+  allowed_cidrs:
+    - "127.0.0.1/32"
 
-# ── Alert Notifications ──────────────────────────────────────────
 alerts:
-  discord_webhook: ""              # Discord webhook URL
-  telegram_bot_token: ""           # Telegram bot token
-  telegram_chat_id: ""             # Telegram chat/channel ID
+  discord_webhook: ""
+  telegram_bot_token: ""
+  telegram_chat_id: ""
 
-# ── Minecraft Protection ─────────────────────────────────────────
 minecraft:
   enabled: true
   server_port: 25565
-  max_conn_rate: 10                # Max new connections per second per IP
-  max_ping_rate: 5                 # Max SLP (Server List Ping) per second per IP
+  max_conn_rate: 10
+  max_ping_rate: 5
 
-# ── BGP (Optional — for multi-node Anycast) ──────────────────────
 bgp:
   enabled: false
-  local_asn: 0                     # Your ASN
-  router_id: "0.0.0.0"            # BGP Router ID
-  anycast_prefix: ""               # e.g., "203.0.113.0/24"
+  experimental: false
+  local_asn: 0
+  router_id: "0.0.0.0"
+  anycast_prefix: ""
 
-# ── Clean Traffic Tunnel (Optional) ──────────────────────────────
 tunnel:
   enabled: false
-  type: "gre"                      # gre, ipip, or wireguard
+  experimental: false
+  type: "gre"
   local_ip: ""
   remote_ip: ""
   interface_name: "aegis0"
   mtu: 1476
-  keepalive_interval: 10           # seconds
+  keepalive_interval: 10
 
-# ── Logging ───────────────────────────────────────────────────────
 logging:
-  level: "info"                    # debug, info, warn, error
-  output: "stdout"                 # stdout, file
+  level: "info"
+  output: "stdout"
   file_path: "/var/log/aegis.log"

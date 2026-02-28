@@ -1,110 +1,89 @@
-# ═══════════════════════════════════════════════════════════════════
-# AegisShield — Minecraft Server Protection Profile
-# Optimized for Minecraft Java Edition servers
-# ═══════════════════════════════════════════════════════════════════
-
-# Tuned thresholds for typical Minecraft server traffic patterns.
-# A Minecraft server with 100 concurrent players generates roughly:
-#   - 50-200 UDP pps per player (voice chat, query protocol)
-#   - 1-5 TCP connections per player (login, resource pack)
-#   - ~5,000-10,000 total TCP pps across all players
+# AegisShield Minecraft profile.
 
 thresholds:
-  udp_pps: 500          # Lower than default — MC uses mostly TCP
-  syn_flood: 3000       # Lower — MC servers don't need many new connections
+  udp_pps: 500
+  syn_flood: 3000
   icmp_pps: 30
   dns_response_size: 512
+
+fragment_policy: 1
+conntrack_enabled: true
 
 blocklist: []
 
 acl_rules:
-  # Allow Minecraft server port
   - priority: 0
     protocol: tcp
     dst_port: 25565
     action: allow
-
-  # Allow SSH for server management
   - priority: 1
     protocol: tcp
     dst_port: 22
     action: allow
-
-  # Allow SFTP
   - priority: 2
     protocol: tcp
     dst_port: 2222
     action: allow
-
-  # Allow Minecraft query protocol (if enabled)
   - priority: 3
     protocol: udp
     dst_port: 25565
     action: allow
-
-  # Allow Minecraft RCON (restrict to admin IPs in production!)
-  # - priority: 4
-  #   protocol: tcp
-  #   dst_port: 25575
-  #   action: allow
-
-  # Allow DNS
   - priority: 5
     protocol: udp
     dst_port: 53
     action: allow
-
-  # Allow ICMP
   - priority: 6
     protocol: icmp
     action: allow
-
-  # Allow Dynmap / web panel
   - priority: 7
     protocol: tcp
     dst_port: 8123
     action: allow
-
-  # Allow Pterodactyl / Panel port (if using)
   - priority: 8
     protocol: tcp
     dst_port: 8080
     action: allow
 
-  # DENY ALL OTHER TRAFFIC
-  # Uncomment for strict lockdown mode
-  # - priority: 99
-  #   protocol: any
-  #   action: deny
-
 minecraft:
   enabled: true
   server_port: 25565
-
-  # Minecraft bot floods — aggressive thresholds
-  # Real players connect once, bots connect hundreds of times
-  max_conn_rate: 5       # Max 5 new connections per second per IP
-  max_ping_rate: 3       # Max 3 server list pings per second per IP
+  max_conn_rate: 5
+  max_ping_rate: 3
 
 control_plane:
   api_listen: "127.0.0.1:9090"
-  metrics_listen: "0.0.0.0:9100"
-  cooldown_seconds: 120   # Longer cooldown for MC (attacks often come in waves)
-  auto_block_duration: 600 # 10 minute auto-block for MC bot floods
+  metrics_listen: "127.0.0.1:9100"
+  cooldown_seconds: 120
+  auto_block_duration: 600
+  expose_remote: false
+  auth_token: ""
+  allowed_origins: []
+  allowed_cidrs:
+    - "127.0.0.1/32"
 
-l7_proxy:
-  enabled: false  # Disable L7 proxy for pure MC server (no HTTP)
+alerts:
+  discord_webhook: ""
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+
+bgp:
+  enabled: false
+  experimental: false
+  local_asn: 0
+  router_id: "0.0.0.0"
+  anycast_prefix: ""
 
 tunnel:
   enabled: false
+  experimental: false
+  type: "gre"
+  local_ip: ""
+  remote_ip: ""
+  interface_name: "aegis0"
+  mtu: 1476
+  keepalive_interval: 10
 
 logging:
   level: "info"
   output: "file"
   file_path: "/var/log/aegisshield/minecraft.log"
-
-alerts:
-  enabled: false
-  discord_webhook: ""      # Highly recommended for MC servers
-  telegram_bot_token: ""
-  telegram_chat_id: ""

@@ -28,7 +28,7 @@ import (
 // ResponseAction represents an automated mitigation action.
 type ResponseAction struct {
 	Type      ActionType
-	Target    string    // IP address or rule ID
+	Target    string // IP address or rule ID
 	Duration  time.Duration
 	StartedAt time.Time
 	ExpiresAt time.Time
@@ -39,7 +39,7 @@ type ResponseAction struct {
 type ActionType int
 
 const (
-	ActionBlockIP         ActionType = iota // Add IP to XDP blocklist
+	ActionBlockIP          ActionType = iota // Add IP to XDP blocklist
 	ActionTightenLimits                      // Reduce rate limit thresholds
 	ActionEnableStrictMode                   // Switch to strict filtering mode
 	ActionNotify                             // Send alert notification
@@ -199,7 +199,7 @@ func (r *Responder) BlockIP(ip string, duration time.Duration, reason string) er
 	}
 
 	if r.bpfMgr != nil {
-		if err := r.bpfMgr.BlockIP(parsedIP); err != nil {
+		if err := r.bpfMgr.BlockIP(parsedIP, duration); err != nil {
 			return fmt.Errorf("BPF block failed: %w", err)
 		}
 	}

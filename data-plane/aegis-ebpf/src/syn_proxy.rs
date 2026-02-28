@@ -4,16 +4,9 @@
 //! In passive mode: SYN packets pass to kernel. In active mode (flood detected):
 //! XDP intercepts SYNs, generates cookie SYN-ACKs, and bounces via XDP_TX.
 
-use aya_ebpf::{
-    maps::PerCpuArray,
-    programs::XdpContext,
-};
-use network_types::{
-    eth::EthHdr,
-    ip::Ipv4Hdr,
-    tcp::TcpHdr,
-};
 use aegis_common::*;
+use aya_ebpf::{maps::PerCpuArray, programs::XdpContext};
+use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 /// Standard MSS values for SYN cookie encoding.
 const MSS_TABLE: [u16; 8] = [536, 1200, 1400, 1440, 1452, 1460, 4312, 8960];
@@ -158,11 +151,7 @@ pub fn extract_mss_from_tcp_options(ctx: &XdpContext, tcp_offset: usize) -> u16 
 
 /// Check if the global SYN rate indicates a flood is in progress.
 #[inline(always)]
-pub fn check_syn_flood(
-    syn_counter: &PerCpuArray<u64>,
-    threshold: u64,
-    now_ns: u64,
-) -> bool {
+pub fn check_syn_flood(syn_counter: &PerCpuArray<u64>, threshold: u64, now_ns: u64) -> bool {
     let count = match syn_counter.get(0) {
         Some(c) => *c,
         None => return false,

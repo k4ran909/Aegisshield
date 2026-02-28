@@ -71,11 +71,11 @@ Internet Traffic
 ### Control Plane (Go)
 - **EWMA Anomaly Detector** — Learns baseline traffic, alerts at 3σ deviation
 - **Graduated Auto-Responder** — LOW→notify, MEDIUM→tighten, HIGH→emergency
-- **REST API** — 9 endpoints for status/block/unblock/rules/config
-- **Prometheus Metrics** — 20+ metrics with per-filter drop breakdowns
+- **REST API** � status + management endpoints with optional Bearer auth
+- **Prometheus Metrics** � local-by-default metrics endpoint
 - **Alert Notifications** — Discord webhook + Telegram Bot API
-- **BGP Manager** — Anycast prefix advertisement, Flowspec, RTBH
-- **Tunnel Manager** — GRE/IPIP/WireGuard clean traffic delivery
+- **BGP Manager (Experimental)** � scaffolding for Anycast/Flowspec/RTBH
+- **Tunnel Manager (Experimental)** � scaffolding for GRE/IPIP/WireGuard delivery
 - **Minecraft Bot Detector** — 5-factor behavioral scoring engine
 
 ### 🎮 Minecraft-Specific
@@ -182,8 +182,8 @@ aegis block 10.0.0.1
 | Endpoint | Description |
 |----------|-------------|
 | `http://localhost:9090/api/v1/status` | Current protection state |
-| `http://localhost:9100/metrics` | Prometheus metrics |
-| `http://localhost:9100/health` | Health check |
+| `http://127.0.0.1:9100/metrics` | Prometheus metrics |
+| `http://127.0.0.1:9100/health` | Health check |
 
 Import `configs/grafana-dashboard.json` into Grafana for a full visual dashboard with 12 panels covering packet throughput, per-filter drops, attack history, and Minecraft bot scores.
 
@@ -203,3 +203,5 @@ Key sections:
 ## 📜 License
 
 MIT License — See [LICENSE](LICENSE) for details.
+
+

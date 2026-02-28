@@ -12,8 +12,8 @@
 //!
 //! Actions: PASS (1) or DROP (0)
 
-use aya_ebpf::maps::Array;
 use aegis_common::{AclRule, MAX_ACL_RULES};
+use aya_ebpf::maps::Array;
 
 /// Evaluate the ACL rules for a given packet.
 ///

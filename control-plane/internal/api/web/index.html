@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AegisShield Control Panel</title>
+  <style>
+    :root {
+      --bg-a: #f5fbff;
+      --bg-b: #eef6ef;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-strong: #ffffff;
+      --line: #d9e4eb;
+      --ink: #102333;
+      --muted: #4d6373;
+      --accent: #0f6a8f;
+      --accent-warm: #dc6b2f;
+      --ok: #1f8a5b;
+      --warn: #d97f14;
+      --error: #c83333;
+      --shadow: 0 14px 44px rgba(9, 31, 49, 0.12);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(1500px 500px at 80% -10%, #d7ebff 0%, transparent 75%),
+                  radial-gradient(1200px 500px at -20% 0%, #deefe3 0%, transparent 70%),
+                  linear-gradient(160deg, var(--bg-a), var(--bg-b));
+      font-family: "Segoe UI Variable", "Trebuchet MS", "Gill Sans", sans-serif;
+      min-height: 100vh;
+    }
+
+    .wrap {
+      width: min(1280px, 95vw);
+      margin: 26px auto 42px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .hero {
+      background: linear-gradient(145deg, #0d2232, #11384f);
+      color: #eaf4ff;
+      border-radius: calc(var(--radius) + 6px);
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+      animation: rise .35s ease-out both;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -80px;
+      top: -50px;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,.22), rgba(255,255,255,0));
+      pointer-events: none;
+    }
+
+    .logo {
+      margin: 0;
+      white-space: pre;
+      font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+      font-size: clamp(10px, 1.2vw, 13px);
+      color: #d8edff;
+      line-height: 1.12;
+    }
+
+    .hero-meta {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      color: #c7dce8;
+    }
+
+    .pill {
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 999px;
+      padding: 4px 11px;
+      font-size: 12px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      animation: rise .35s ease-out both;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: .01em;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px;
+    }
+
+    .card .k {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 700;
+    }
+
+    .card .v {
+      font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+      font-size: 24px;
+      font-weight: 750;
+      letter-spacing: -.02em;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .form {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .form h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    input, button {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid #cddce5;
+      font: inherit;
+    }
+
+    input {
+      background: #fff;
+      color: #102333;
+    }
+
+    button {
+      background: linear-gradient(180deg, #1d79a0, #0f6284);
+      color: #fff;
+      border: 0;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .12s ease, filter .12s ease;
+    }
+
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
+
+    .btn-muted {
+      background: linear-gradient(180deg, #2f4b5f, #243b4d);
+    }
+
+    .btn-warn {
+      background: linear-gradient(180deg, #f0893a, #d96c25);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .toolbar button {
+      width: auto;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .flash {
+      min-height: 24px;
+      padding: 7px 9px;
+      border-radius: 8px;
+      font-size: 13px;
+      border: 1px solid transparent;
+      color: var(--muted);
+      background: #f4f8fb;
+    }
+
+    .flash.ok { color: var(--ok); background: #ecf8f1; border-color: #c9ebd7; }
+    .flash.warn { color: var(--warn); background: #fff6e7; border-color: #f3dfb8; }
+    .flash.error { color: var(--error); background: #fdecec; border-color: #f5caca; }
+
+    .state {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: .04em;
+      padding: 5px 10px;
+      text-transform: uppercase;
+      border: 1px solid;
+    }
+
+    .state.normal { color: #216f4d; border-color: #9dd7bc; background: #ecf8f3; }
+    .state.detected { color: #9d6116; border-color: #efca96; background: #fff6e7; }
+    .state.mitigating { color: #8b2525; border-color: #efafaf; background: #ffefef; }
+    .state.cooldown { color: #2b4f81; border-color: #b5c7e7; background: #eef4ff; }
+    .state.unknown { color: #556270; border-color: #d0d8de; background: #f2f5f8; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 8px 7px;
+      border-bottom: 1px solid #e4edf2;
+      vertical-align: top;
+    }
+
+    th {
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #4b6274;
+      font-size: 11px;
+      text-align: left;
+      font-weight: 800;
+    }
+
+    td code {
+      font-family: "JetBrains Mono", "Consolas", monospace;
+      font-size: 12px;
+      background: #f1f6fa;
+      border: 1px solid #dce6ed;
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+
+    .tiny {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .spark {
+      width: 100%;
+      min-height: 78px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      margin-top: 8px;
+    }
+
+    @keyframes rise {
+      from { transform: translateY(6px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @media (max-width: 1100px) {
+      .cards { grid-template-columns: repeat(3, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      .cards { grid-template-columns: repeat(2, 1fr); }
+      .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+<pre class="logo">    _                _     ____  _     _      _     _
+   / \   ___  __ _  (_)___/ ___|| |__ (_) ___| | __| |
+  / _ \ / _ \/ _` | | / __\___ \| '_ \| |/ _ \ |/ _` |
+ / ___ \  __/ (_| | | \__ \___) | | | | |  __/ | (_| |
+/_/   \_\___|\__, |_|_|___/____/|_| |_|_|\___|_|\__,_|
+             |___/</pre>
+      <div class="hero-meta">
+        <span class="pill">Control Plane</span>
+        <span class="pill" id="api-base-pill">API: /api/v1</span>
+        <span class="pill" id="conn-pill">Connection: waiting</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Live Overview</h2>
+      <div class="cards">
+        <article class="card"><div class="k">Engine State</div><div class="v" id="state-value">-</div></article>
+        <article class="card"><div class="k">Uptime</div><div class="v" id="uptime-value">-</div></article>
+        <article class="card"><div class="k">RX PPS</div><div class="v" id="rxpps-value">0</div></article>
+        <article class="card"><div class="k">DROP PPS</div><div class="v" id="droppps-value">0</div></article>
+        <article class="card"><div class="k">Blocked IPs</div><div class="v" id="blocked-value">0</div></article>
+        <article class="card"><div class="k">Active Actions</div><div class="v" id="actions-value">0</div></article>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div class="tiny">RX PPS trend</div>
+          <div id="rx-spark" class="spark"></div>
+        </div>
+        <div>
+          <div class="tiny">DROP PPS trend</div>
+          <div id="drop-spark" class="spark"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Controls</h2>
+      <div class="toolbar">
+        <button id="refresh-btn" type="button">Refresh Now</button>
+        <button id="pause-btn" type="button" class="btn-muted">Pause Polling</button>
+      </div>
+      <div id="flash" class="flash">Ready.</div>
+      <div class="grid-3">
+        <form class="form" id="auth-form">
+          <h3>API Token</h3>
+          <div class="tiny">Used for mutating endpoints.</div>
+          <div class="row">
+            <input id="token-input" type="password" placeholder="Bearer token" />
+            <button type="submit">Save Token</button>
+          </div>
+          <button id="clear-token-btn" type="button" class="btn-muted">Clear Token</button>
+        </form>
+
+        <form class="form" id="block-form">
+          <h3>Block IP</h3>
+          <div class="row">
+            <input id="block-ip" type="text" placeholder="198.51.100.10" required />
+            <input id="block-duration" type="text" placeholder="10m or permanent" />
+          </div>
+          <input id="block-reason" type="text" placeholder="Reason" />
+          <div style="height:8px"></div>
+          <button type="submit" class="btn-warn">Block</button>
+        </form>
+
+        <form class="form" id="threshold-form">
+          <h3>Thresholds</h3>
+          <div class="row">
+            <input id="udp-threshold" type="number" min="1" placeholder="UDP PPS" required />
+            <input id="syn-threshold" type="number" min="1" placeholder="SYN flood" required />
+          </div>
+          <div class="row">
+            <input id="icmp-threshold" type="number" min="1" placeholder="ICMP PPS" required />
+            <input id="dns-threshold" type="number" min="1" placeholder="DNS max bytes" required />
+          </div>
+          <button type="submit">Apply Thresholds</button>
+        </form>
+      </div>
+      <div class="grid-3" style="margin-top:10px;">
+        <form class="form" id="unblock-form">
+          <h3>Unblock IP</h3>
+          <div class="row">
+            <input id="unblock-ip" type="text" placeholder="198.51.100.10" required />
+            <button type="submit" class="btn-muted">Unblock</button>
+          </div>
+        </form>
+        <div class="form">
+          <h3>Config Snapshot</h3>
+          <div id="config-summary" class="tiny">Loading...</div>
+        </div>
+        <div class="form">
+          <h3>Learning Mode</h3>
+          <div id="learning-state" class="state unknown">Unknown</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <section class="panel">
+        <h2>Kernel Counters</h2>
+        <table id="stats-table">
+          <thead><tr><th>Metric</th><th>Total</th><th>Per Sec</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+      <section class="panel">
+        <h2>Blocklist</h2>
+        <table id="blocklist-table">
+          <thead><tr><th>IP</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="grid-2">
+      <section class="panel">
+        <h2>Active Actions</h2>
+        <table id="actions-table">
+          <thead><tr><th>Type</th><th>Target</th><th>Reason</th><th>Expires</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+      <section class="panel">
+        <h2>Attack History</h2>
+        <table id="attacks-table">
+          <thead><tr><th>Type</th><th>Start</th><th>Peak PPS</th><th>Dropped</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="panel">
+      <h2>Detector Baselines</h2>
+      <table id="baselines-table">
+        <thead><tr><th>Metric</th><th>EWMA</th><th>Std Dev</th><th>Samples</th><th>Latest</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const apiBase = `${location.origin}/api/v1`;
+    const state = {
+      token: localStorage.getItem("aegis_api_token") || "",
+      paused: false,
+      timer: null,
+      maxPoints: 50,
+      rxHistory: [],
+      dropHistory: []
+    };
+
+    const statsKeyMap = [
+      ["rx_packets", "rx_packets", "rx_pps"],
+      ["total_drops", "total_drops", "drop_pps"],
+      ["total_passed", "total_passed", ""],
+      ["tx_packets", "tx_packets", ""],
+      ["blocklist_drops", "blocklist_drops", "blocklist_drops_per_sec"],
+      ["acl_drops", "acl_drops", ""],
+      ["udp_drops", "udp_drops", "udp_drops_per_sec"],
+      ["syn_drops", "syn_drops", "syn_drops_per_sec"],
+      ["icmp_drops", "icmp_drops", "icmp_drops_per_sec"],
+      ["dns_amp_drops", "dns_amp_drops", "dns_drops_per_sec"],
+      ["gre_drops", "gre_drops", "gre_drops_per_sec"],
+      ["frag_drops", "frag_drops", "frag_drops_per_sec"],
+      ["conntrack_bypass", "conntrack_bypass", ""],
+      ["syn_cookies_sent", "syn_cookies_sent", ""]
+    ];
+
+    const el = (id) => document.getElementById(id);
+
+    function init() {
+      el("api-base-pill").textContent = `API: ${apiBase}`;
+      el("token-input").value = state.token;
+      bindEvents();
+      refreshAll();
+      state.timer = setInterval(refreshAll, 2000);
+    }
+
+    function bindEvents() {
+      el("refresh-btn").addEventListener("click", refreshAll);
+
+      el("pause-btn").addEventListener("click", () => {
+        state.paused = !state.paused;
+        el("pause-btn").textContent = state.paused ? "Resume Polling" : "Pause Polling";
+        flash(state.paused ? "Polling paused." : "Polling resumed.", "warn");
+      });
+
+      el("auth-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        state.token = el("token-input").value.trim();
+        localStorage.setItem("aegis_api_token", state.token);
+        flash("Token saved in browser storage.", "ok");
+      });
+
+      el("clear-token-btn").addEventListener("click", () => {
+        state.token = "";
+        localStorage.removeItem("aegis_api_token");
+        el("token-input").value = "";
+        flash("Token removed.", "warn");
+      });
+
+      el("block-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = {
+          ip: el("block-ip").value.trim(),
+          duration: el("block-duration").value.trim() || "5m",
+          reason: el("block-reason").value.trim() || "Manual block from web panel"
+        };
+        try {
+          await apiPost("/block", payload);
+          flash(`Blocked ${payload.ip}.`, "ok");
+          el("block-form").reset();
+          refreshAll();
+        } catch (err) {
+          flash(`Block failed: ${err.message}`, "error");
+        }
+      });
+
+      el("unblock-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const ip = el("unblock-ip").value.trim();
+        if (!ip) return;
+        try {
+          await apiPost("/unblock", { ip });
+          flash(`Unblocked ${ip}.`, "ok");
+          el("unblock-form").reset();
+          refreshAll();
+        } catch (err) {
+          flash(`Unblock failed: ${err.message}`, "error");
+        }
+      });
+
+      el("threshold-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = {
+          udp_pps: Number(el("udp-threshold").value),
+          syn_flood: Number(el("syn-threshold").value),
+          icmp_pps: Number(el("icmp-threshold").value),
+          dns_response_size: Number(el("dns-threshold").value)
+        };
+        try {
+          await apiPost("/thresholds", payload);
+          flash("Thresholds updated in live CONFIG map.", "ok");
+          refreshAll();
+        } catch (err) {
+          flash(`Threshold update failed: ${err.message}`, "error");
+        }
+      });
+    }
+
+    async function refreshAll() {
+      if (state.paused) return;
+      try {
+        const [status, blocklist, actions, attacks, baselines, cfg] = await Promise.all([
+          apiGet("/status"),
+          apiGet("/blocklist"),
+          apiGet("/actions"),
+          apiGet("/attacks"),
+          apiGet("/baselines"),
+          apiGet("/config")
+        ]);
+
+        renderStatus(status);
+        renderBlocklist(blocklist);
+        renderActions(actions);
+        renderAttacks(attacks);
+        renderBaselines(baselines);
+        renderConfig(cfg);
+        setConnection(true);
+      } catch (err) {
+        setConnection(false);
+        flash(`Refresh failed: ${err.message}`, "error");
+      }
+    }
+
+    function renderStatus(status) {
+      const stats = status?.stats || {};
+      const stateName = (status?.state || "UNKNOWN").toUpperCase();
+      el("state-value").innerHTML = `<span class="state ${stateName.toLowerCase()}">${stateName}</span>`;
+      el("uptime-value").textContent = status?.uptime || "-";
+      el("rxpps-value").textContent = fmt(stats.rx_pps || 0);
+      el("droppps-value").textContent = fmt(stats.drop_pps || 0);
+      el("blocked-value").textContent = fmt(status?.blocked_ips || 0);
+      el("actions-value").textContent = fmt(status?.active_actions || 0);
+
+      const learning = status?.learning ? "Learning" : "Stable";
+      el("learning-state").className = `state ${status?.learning ? "detected" : "normal"}`;
+      el("learning-state").textContent = learning;
+
+      pushPoint(state.rxHistory, Number(stats.rx_pps || 0));
+      pushPoint(state.dropHistory, Number(stats.drop_pps || 0));
+      renderSpark("rx-spark", state.rxHistory, "#0f6a8f");
+      renderSpark("drop-spark", state.dropHistory, "#d04b2f");
+
+      const tbody = el("stats-table").querySelector("tbody");
+      tbody.innerHTML = "";
+      for (const [label, totalKey, rateKey] of statsKeyMap) {
+        const tr = document.createElement("tr");
+        const total = Number(stats[totalKey] || 0);
+        const rate = rateKey ? Number(stats[rateKey] || 0) : 0;
+        tr.innerHTML = `
+          <td><code>${label}</code></td>
+          <td>${fmt(total)}</td>
+          <td>${rateKey ? fmt(rate) : "-"}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderBlocklist(blocklist) {
+      const ips = Array.isArray(blocklist?.ips) ? blocklist.ips : [];
+      const tbody = el("blocklist-table").querySelector("tbody");
+      tbody.innerHTML = "";
+
+      if (ips.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="2" class="tiny">No blocked IPs.</td></tr>`;
+        return;
+      }
+
+      for (const ip of ips) {
+        const tr = document.createElement("tr");
+        const btn = document.createElement("button");
+        btn.className = "btn-muted";
+        btn.textContent = "Unblock";
+        btn.style.width = "auto";
+        btn.addEventListener("click", async () => {
+          try {
+            await apiPost("/unblock", { ip });
+            flash(`Unblocked ${ip}.`, "ok");
+            refreshAll();
+          } catch (err) {
+            flash(`Unblock failed: ${err.message}`, "error");
+          }
+        });
+
+        const tdIP = document.createElement("td");
+        tdIP.innerHTML = `<code>${ip}</code>`;
+        const tdAction = document.createElement("td");
+        tdAction.appendChild(btn);
+        tr.appendChild(tdIP);
+        tr.appendChild(tdAction);
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderActions(actions) {
+      const list = Array.isArray(actions) ? actions : [];
+      const tbody = el("actions-table").querySelector("tbody");
+      tbody.innerHTML = "";
+
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="tiny">No active actions.</td></tr>`;
+        return;
+      }
+
+      for (const action of list) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(actionTypeLabel(action.Type))}</td>
+          <td>${escapeHtml(String(action.Target ?? "-"))}</td>
+          <td>${escapeHtml(String(action.Reason ?? "-"))}</td>
+          <td>${formatDate(action.ExpiresAt)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderAttacks(attacks) {
+      const list = Array.isArray(attacks) ? attacks : [];
+      const tbody = el("attacks-table").querySelector("tbody");
+      tbody.innerHTML = "";
+
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="tiny">No attack history yet.</td></tr>`;
+        return;
+      }
+
+      for (const attack of list.slice().reverse().slice(0, 20)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(String(attack.Type || "-"))}</td>
+          <td>${formatDate(attack.StartTime)}</td>
+          <td>${fmt(Number(attack.PeakPPS || 0))}</td>
+          <td>${fmt(Number(attack.DroppedPkts || 0))}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderBaselines(baselines) {
+      const tbody = el("baselines-table").querySelector("tbody");
+      tbody.innerHTML = "";
+      const entries = Object.entries(baselines || {}).sort(([a], [b]) => a.localeCompare(b));
+
+      if (!entries.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="tiny">No baseline samples yet.</td></tr>`;
+        return;
+      }
+
+      for (const [name, baseline] of entries) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><code>${escapeHtml(name)}</code></td>
+          <td>${fmtFloat(baseline.EWMA)}</td>
+          <td>${fmtFloat(baseline.StdDev)}</td>
+          <td>${fmt(Number(baseline.Samples || 0))}</td>
+          <td>${fmtFloat(baseline.LastValue)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderConfig(cfg) {
+      const thresholds = cfg?.thresholds || {};
+      el("udp-threshold").value = thresholds.udp_pps || "";
+      el("syn-threshold").value = thresholds.syn_flood || "";
+      el("icmp-threshold").value = thresholds.icmp_pps || "";
+      el("dns-threshold").value = thresholds.dns_response_size || "";
+
+      const cp = cfg?.control_plane || {};
+      const summary = [
+        `API: ${cp.api_listen || "-"}`,
+        `Metrics: ${cp.metrics_listen || "-"}`,
+        `Remote: ${cp.expose_remote ? "enabled" : "local-only"}`,
+        `Cooldown: ${cp.cooldown_seconds || 0}s`,
+        `Auto Block: ${cp.auto_block_duration || 0}s`
+      ].join("<br>");
+      el("config-summary").innerHTML = summary;
+    }
+
+    function renderSpark(id, values, color) {
+      const host = el(id);
+      if (!host) return;
+      if (!values.length) {
+        host.innerHTML = "";
+        return;
+      }
+
+      const width = host.clientWidth || 500;
+      const height = 78;
+      const max = Math.max(...values, 1);
+      const step = values.length > 1 ? width / (values.length - 1) : width;
+      const points = values
+        .map((value, idx) => {
+          const x = idx * step;
+          const y = height - (value / max) * (height - 10) - 5;
+          return `${x.toFixed(2)},${y.toFixed(2)}`;
+        })
+        .join(" ");
+
+      host.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none">
+          <polyline fill="none" stroke="${color}" stroke-width="2.8" points="${points}" />
+        </svg>
+      `;
+    }
+
+    async function apiGet(path) {
+      const response = await fetch(`${apiBase}${path}`, {
+        headers: authHeaders(false)
+      });
+      return parseResponse(response);
+    }
+
+    async function apiPost(path, payload) {
+      const response = await fetch(`${apiBase}${path}`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify(payload)
+      });
+      return parseResponse(response);
+    }
+
+    function authHeaders(json) {
+      const headers = {};
+      if (json) headers["Content-Type"] = "application/json";
+      if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
+      return headers;
+    }
+
+    async function parseResponse(response) {
+      const isJSON = (response.headers.get("content-type") || "").includes("application/json");
+      const payload = isJSON ? await response.json() : await response.text();
+      if (!response.ok) {
+        const message = payload?.error?.message || payload?.error || String(payload || response.statusText);
+        throw new Error(`${response.status} ${message}`);
+      }
+      return payload;
+    }
+
+    function flash(message, type = "ok") {
+      const box = el("flash");
+      box.textContent = message;
+      box.className = `flash ${type}`;
+    }
+
+    function setConnection(ok) {
+      const pill = el("conn-pill");
+      pill.textContent = ok ? "Connection: online" : "Connection: degraded";
+      pill.style.borderColor = ok ? "rgba(89, 214, 163, 0.55)" : "rgba(240, 128, 128, 0.65)";
+      pill.style.color = ok ? "#9df2d0" : "#ffc3c3";
+    }
+
+    function pushPoint(list, value) {
+      list.push(value);
+      if (list.length > state.maxPoints) {
+        list.shift();
+      }
+    }
+
+    function fmt(value) {
+      return new Intl.NumberFormat().format(Number(value || 0));
+    }
+
+    function fmtFloat(value) {
+      return Number(value || 0).toFixed(2);
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+    }
+
+    function actionTypeLabel(value) {
+      const names = {
+        0: "BLOCK_IP",
+        1: "TIGHTEN_LIMITS",
+        2: "STRICT_MODE",
+        3: "NOTIFY",
+        4: "UNBLOCK_IP",
+        5: "RESTORE_LIMITS"
+      };
+      if (value in names) return names[value];
+      return String(value ?? "-");
+    }
+
+    function escapeHtml(input) {
+      return input
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    window.addEventListener("resize", () => {
+      renderSpark("rx-spark", state.rxHistory, "#0f6a8f");
+      renderSpark("drop-spark", state.dropHistory, "#d04b2f");
+    });
+
+    init();
+  </script>
+</body>
+</html>

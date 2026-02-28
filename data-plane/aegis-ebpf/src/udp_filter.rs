@@ -7,8 +7,8 @@
 //! The LRU map automatically evicts the oldest entry when full,
 //! ensuring memory usage stays bounded even under heavy attack.
 
-use aya_ebpf::maps::LruHashMap;
 use aegis_common::*;
+use aya_ebpf::maps::LruHashMap;
 
 /// Per-IP UDP rate state tracked in the BPF map.
 #[repr(C)]
@@ -69,12 +69,12 @@ pub fn check_udp_rate(
 #[inline(always)]
 pub fn get_port_threshold(dst_port: u16, default_threshold: u64) -> u64 {
     match dst_port {
-        53 => default_threshold / 4,       // DNS: 4x stricter
-        123 => default_threshold / 5,      // NTP: 5x stricter
+        53 => default_threshold / 4,        // DNS: 4x stricter
+        123 => default_threshold / 5,       // NTP: 5x stricter
         161 | 162 => default_threshold / 3, // SNMP: 3x stricter
-        389 => default_threshold / 5,      // LDAP: 5x stricter
-        1900 => default_threshold / 5,     // SSDP: 5x stricter
-        11211 => default_threshold / 10,   // Memcached: 10x stricter
+        389 => default_threshold / 5,       // LDAP: 5x stricter
+        1900 => default_threshold / 5,      // SSDP: 5x stricter
+        11211 => default_threshold / 10,    // Memcached: 10x stricter
         _ => default_threshold,
     }
 }

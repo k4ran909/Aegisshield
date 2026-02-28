@@ -5,6 +5,7 @@ go 1.22.7
 toolchain go1.24.9
 
 require (
+	github.com/cilium/ebpf v0.17.3
 	github.com/prometheus/client_golang v1.20.5
 	github.com/spf13/cobra v1.8.1
 	go.uber.org/zap v1.27.0

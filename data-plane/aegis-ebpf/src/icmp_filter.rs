@@ -4,8 +4,8 @@
 //! and ICMP redirect attacks. Only Echo Request/Reply are allowed;
 //! dangerous types are blocked outright.
 
-use aya_ebpf::maps::LruHashMap;
 use aegis_common::*;
+use aya_ebpf::maps::LruHashMap;
 
 /// ICMP message types (RFC 792).
 pub const ICMP_ECHO_REPLY: u8 = 0;

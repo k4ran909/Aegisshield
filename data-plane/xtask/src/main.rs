@@ -1,10 +1,10 @@
+use std::env;
 /// AegisShield xtask — Cross-compile eBPF bytecode.
 ///
 /// Usage:
 ///   cargo xtask build-ebpf          # Build eBPF in debug mode
 ///   cargo xtask build-ebpf --release  # Build eBPF in release mode (optimised)
 use std::process::Command;
-use std::env;
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -29,8 +29,7 @@ fn main() -> Result<()> {
 
 fn build_ebpf(release: bool) -> Result<()> {
     // Find the workspace root (parent of xtask/).
-    let workspace_dir = env::current_dir()
-        .context("Failed to get current directory")?;
+    let workspace_dir = env::current_dir().context("Failed to get current directory")?;
 
     println!("🔨 Building eBPF program...");
     println!("   Target: bpfel-unknown-none (little-endian BPF)");
@@ -44,9 +43,12 @@ fn build_ebpf(release: bool) -> Result<()> {
         .args([
             "+nightly",
             "build",
-            "--package", "aegis-ebpf",
-            "--target", "bpfel-unknown-none",
-            "-Z", "build-std=core",
+            "--package",
+            "aegis-ebpf",
+            "--target",
+            "bpfel-unknown-none",
+            "-Z",
+            "build-std=core",
         ]);
 
     if release {

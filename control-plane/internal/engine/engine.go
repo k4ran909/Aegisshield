@@ -1,10 +1,4 @@
 // Package engine is the core mitigation orchestrator.
-//
-// It runs the main event loop that:
-// 1. Polls XDP data plane statistics every second
-// 2. Evaluates traffic against anomaly thresholds
-// 3. Transitions between states: NORMAL → DETECTED → MITIGATING → COOLDOWN
-// 4. Dispatches automated responses (update BPF maps, block IPs, trigger alerts)
 package engine
 
 import (
@@ -18,14 +12,14 @@ import (
 	"github.com/aegisshield/aegisshield/internal/config"
 )
 
-// AttackState represents the current state of the mitigation engine.
+// AttackState represents the current mitigation state.
 type AttackState int
 
 const (
-	StateNormal    AttackState = iota // No attack detected
-	StateDetected                     // Anomaly detected, evaluating
-	StateMitigating                   // Active mitigation in progress
-	StateCooldown                     // Attack subsided, waiting before returning to normal
+	StateNormal AttackState = iota
+	StateDetected
+	StateMitigating
+	StateCooldown
 )
 
 func (s AttackState) String() string {
@@ -45,15 +39,15 @@ func (s AttackState) String() string {
 
 // AttackInfo contains details about a detected attack.
 type AttackInfo struct {
-	Type       string    // "SYN_FLOOD", "UDP_FLOOD", "ICMP_FLOOD", etc.
-	StartTime  time.Time
-	PeakPPS    uint64
-	PeakBPS    uint64
-	SourceIPs  []string
+	Type        string
+	StartTime   time.Time
+	PeakPPS     uint64
+	PeakBPS     uint64
+	SourceIPs   []string
 	DroppedPkts uint64
 }
 
-// Engine is the core mitigation orchestrator.
+// Engine coordinates state transitions based on live traffic.
 type Engine struct {
 	cfg    *config.Config
 	bpf    *bpf.Manager
@@ -63,9 +57,7 @@ type Engine struct {
 	state         AttackState
 	currentAttack *AttackInfo
 	attackHistory []AttackInfo
-
-	// Channels for async events
-	alertCh chan AttackInfo
+	alertCh       chan AttackInfo
 }
 
 // New creates a new mitigation engine.
@@ -86,45 +78,48 @@ func (e *Engine) State() AttackState {
 	return e.state
 }
 
-// Run starts the main event loop. Blocks until context is cancelled.
+// Run polls stats from BPF and updates the state machine.
 func (e *Engine) Run(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	e.logger.Info("Engine event loop started")
-
 	for {
 		select {
 		case <-ctx.Done():
 			e.logger.Info("Engine shutting down")
 			return
-
 		case <-ticker.C:
 			e.tick()
 		}
 	}
 }
 
-// tick is called every second to evaluate the current traffic state.
 func (e *Engine) tick() {
 	if e.bpf == nil {
-		return // BPF not available yet
+		return
 	}
 
-	// ── Read XDP Statistics ──────────────────────────────────────────
 	stats, err := e.bpf.ReadStats()
 	if err != nil {
 		e.logger.Debugw("Failed to read BPF stats", "error", err)
 		return
 	}
 
-	// ── Evaluate Against Thresholds ──────────────────────────────────
+	e.Ingest(stats)
+}
+
+// Ingest updates state transitions using an externally supplied stats snapshot.
+func (e *Engine) Ingest(stats *bpf.Stats) {
+	if stats == nil {
+		return
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	switch e.state {
 	case StateNormal:
-		// Check for anomalies
 		if stats.UDPDropsPerSec > e.cfg.Thresholds.UDPPPS*2 ||
 			stats.SYNDropsPerSec > e.cfg.Thresholds.SYNFlood {
 			e.state = StateDetected
@@ -132,40 +127,41 @@ func (e *Engine) tick() {
 				StartTime: time.Now(),
 				Type:      e.classifyAttack(stats),
 			}
-			e.logger.Warnw("⚠ Attack DETECTED",
+			e.logger.Warnw("Attack detected",
 				"type", e.currentAttack.Type,
-				"udp_drops/s", stats.UDPDropsPerSec,
-				"syn_drops/s", stats.SYNDropsPerSec,
+				"udp_drops_per_sec", stats.UDPDropsPerSec,
+				"syn_drops_per_sec", stats.SYNDropsPerSec,
 			)
 		}
 
 	case StateDetected:
-		// Confirm the attack is sustained (not a brief spike)
 		e.state = StateMitigating
-		e.logger.Warnw("🛡 MITIGATING attack",
-			"type", e.currentAttack.Type,
-			"duration", time.Since(e.currentAttack.StartTime),
-		)
+		if e.currentAttack != nil {
+			e.logger.Warnw("Entering mitigation",
+				"type", e.currentAttack.Type,
+				"duration", time.Since(e.currentAttack.StartTime),
+			)
+		}
 
 	case StateMitigating:
-		// Update peak values
-		if stats.TotalDropsPerSec > e.currentAttack.PeakPPS {
+		if e.currentAttack != nil && stats.TotalDropsPerSec > e.currentAttack.PeakPPS {
 			e.currentAttack.PeakPPS = stats.TotalDropsPerSec
 		}
 
-		// Check if attack has subsided
 		if stats.TotalDropsPerSec < 100 {
 			e.state = StateCooldown
-			e.logger.Infow("Attack subsiding — entering cooldown",
-				"peak_pps", e.currentAttack.PeakPPS,
-				"duration", time.Since(e.currentAttack.StartTime),
-			)
+			if e.currentAttack != nil {
+				e.logger.Infow("Attack subsiding, entering cooldown",
+					"peak_pps", e.currentAttack.PeakPPS,
+					"duration", time.Since(e.currentAttack.StartTime),
+				)
+			}
 		}
 
 	case StateCooldown:
 		cooldownDuration := time.Duration(e.cfg.ControlPlane.CooldownSeconds) * time.Second
 		if e.currentAttack != nil && time.Since(e.currentAttack.StartTime) > cooldownDuration {
-			e.logger.Infow("✓ Returning to NORMAL state",
+			e.logger.Infow("Returning to normal",
 				"attack_type", e.currentAttack.Type,
 				"total_duration", time.Since(e.currentAttack.StartTime),
 				"peak_pps", e.currentAttack.PeakPPS,
@@ -177,7 +173,6 @@ func (e *Engine) tick() {
 	}
 }
 
-// classifyAttack determines the attack type based on stats.
 func (e *Engine) classifyAttack(stats *bpf.Stats) string {
 	if stats.SYNDropsPerSec > stats.UDPDropsPerSec && stats.SYNDropsPerSec > stats.ICMPDropsPerSec {
 		return "SYN_FLOOD"
@@ -191,7 +186,7 @@ func (e *Engine) classifyAttack(stats *bpf.Stats) string {
 	return "MIXED_VOLUMETRIC"
 }
 
-// GetAttackHistory returns a copy of the attack history.
+// GetAttackHistory returns a copy of recorded attacks.
 func (e *Engine) GetAttackHistory() []AttackInfo {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

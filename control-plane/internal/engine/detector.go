@@ -37,10 +37,10 @@ type DetectorConfig struct {
 // DefaultDetectorConfig returns sensible defaults.
 func DefaultDetectorConfig() DetectorConfig {
 	return DetectorConfig{
-		Alpha:           0.1,  // 10% weight to new sample
-		ZScoreThreshold: 3.0,  // Alert at 3 standard deviations
-		MinSamples:      60,   // Need 60 samples (1 min at 1Hz) before detecting
-		RateWindowSize:  10,   // 10-sample window for rate-of-change
+		Alpha:           0.1, // 10% weight to new sample
+		ZScoreThreshold: 3.0, // Alert at 3 standard deviations
+		MinSamples:      60,  // Need 60 samples (1 min at 1Hz) before detecting
+		RateWindowSize:  10,  // 10-sample window for rate-of-change
 	}
 }
 
@@ -111,23 +111,23 @@ func (b *MetricBaseline) RateOfChange() float64 {
 
 // Detector implements multi-metric anomaly detection.
 type Detector struct {
-	mu       sync.RWMutex
-	config   DetectorConfig
-	logger   *zap.SugaredLogger
+	mu        sync.RWMutex
+	config    DetectorConfig
+	logger    *zap.SugaredLogger
 	baselines map[string]*MetricBaseline
-	alerts   []AnomalyAlert
+	alerts    []AnomalyAlert
 }
 
 // AnomalyAlert represents a detected anomaly.
 type AnomalyAlert struct {
-	Metric    string
-	Value     float64
-	Baseline  float64
-	StdDev    float64
-	ZScore    float64
+	Metric       string
+	Value        float64
+	Baseline     float64
+	StdDev       float64
+	ZScore       float64
 	RateOfChange float64
-	Timestamp time.Time
-	Severity  AlertSeverity
+	Timestamp    time.Time
+	Severity     AlertSeverity
 }
 
 // AlertSeverity indicates how significant the anomaly is.
@@ -135,8 +135,8 @@ type AlertSeverity int
 
 const (
 	SeverityLow    AlertSeverity = iota // Minor deviation (2σ)
-	SeverityMedium                       // Significant (3σ)
-	SeverityHigh                         // Critical (5σ)
+	SeverityMedium                      // Significant (3σ)
+	SeverityHigh                        // Critical (5σ)
 )
 
 func (s AlertSeverity) String() string {
@@ -193,12 +193,12 @@ func (d *Detector) Ingest(stats *bpf.Stats) []AnomalyAlert {
 		"udp_drops_per_sec":       float64(stats.UDPDropsPerSec),
 		"syn_drops_per_sec":       float64(stats.SYNDropsPerSec),
 		"icmp_drops_per_sec":      float64(stats.ICMPDropsPerSec),
-		"dns_drops_per_sec":       float64(stats.DNSAmpDrops),
+		"dns_drops_per_sec":       float64(stats.DNSDropsPerSec),
 		"total_drops_per_sec":     float64(stats.TotalDropsPerSec),
-		"total_rx_per_sec":        float64(stats.RxPackets),
-		"blocklist_drops_per_sec": float64(stats.BlocklistDrops),
-		"gre_drops_per_sec":       0, // Populated when available
-		"frag_drops_per_sec":      0,
+		"total_rx_per_sec":        float64(stats.RxPPS),
+		"blocklist_drops_per_sec": float64(stats.BlocklistDropsPerSec),
+		"gre_drops_per_sec":       float64(stats.GREDropsPerSec),
+		"frag_drops_per_sec":      float64(stats.FragDropsPerSec),
 	}
 
 	for name, value := range metricValues {

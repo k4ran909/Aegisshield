@@ -8,6 +8,10 @@ use std::fs;
 #[derive(Debug, Deserialize)]
 pub struct AegisConfig {
     pub thresholds: ThresholdConfig,
+    #[serde(default = "default_fragment_policy")]
+    pub fragment_policy: u8,
+    #[serde(default = "default_conntrack_enabled")]
+    pub conntrack_enabled: bool,
     #[serde(default)]
     pub blocklist: Vec<String>,
     #[serde(default)]
@@ -34,7 +38,7 @@ pub struct ThresholdConfig {
 }
 
 /// ACL rule from YAML.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AclRuleConfig {
     pub priority: u32,
     pub protocol: String,
@@ -80,27 +84,57 @@ pub struct LoggingConfig {
 }
 
 // Default value functions
-fn default_udp_pps() -> u64 { 1000 }
-fn default_syn_flood() -> u64 { 5000 }
-fn default_icmp_pps() -> u64 { 50 }
-fn default_dns_response_size() -> u16 { 512 }
-fn default_mc_port() -> u16 { 25565 }
-fn default_mc_conn_rate() -> u64 { 10 }
-fn default_mc_ping_rate() -> u64 { 5 }
-fn default_api_listen() -> String { "127.0.0.1:9090".to_string() }
-fn default_metrics_listen() -> String { "0.0.0.0:9100".to_string() }
-fn default_cooldown() -> u64 { 60 }
-fn default_block_duration() -> u64 { 300 }
-fn default_log_level() -> String { "info".to_string() }
-fn default_log_output() -> String { "stdout".to_string() }
+fn default_udp_pps() -> u64 {
+    1000
+}
+fn default_syn_flood() -> u64 {
+    5000
+}
+fn default_icmp_pps() -> u64 {
+    50
+}
+fn default_dns_response_size() -> u16 {
+    512
+}
+fn default_mc_port() -> u16 {
+    25565
+}
+fn default_mc_conn_rate() -> u64 {
+    10
+}
+fn default_mc_ping_rate() -> u64 {
+    5
+}
+fn default_api_listen() -> String {
+    "127.0.0.1:9090".to_string()
+}
+fn default_metrics_listen() -> String {
+    "127.0.0.1:9100".to_string()
+}
+fn default_cooldown() -> u64 {
+    60
+}
+fn default_block_duration() -> u64 {
+    300
+}
+fn default_log_level() -> String {
+    "info".to_string()
+}
+fn default_log_output() -> String {
+    "stdout".to_string()
+}
+fn default_fragment_policy() -> u8 {
+    1
+}
+fn default_conntrack_enabled() -> bool {
+    true
+}
 
 /// Load and parse the YAML configuration file.
 pub fn load_config(path: &str) -> Result<AegisConfig> {
-    let content = fs::read_to_string(path)
-        .context(format!("Read config file: {}", path))?;
+    let content = fs::read_to_string(path).context(format!("Read config file: {}", path))?;
 
-    let config: AegisConfig = serde_yaml::from_str(&content)
-        .context("Parse YAML configuration")?;
+    let config: AegisConfig = serde_yaml::from_str(&content).context("Parse YAML configuration")?;
 
     Ok(config)
 }

@@ -1,9 +1,8 @@
-// AegisShield — config structs
-// Updated config.go to match the fully wired daemon
 package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -45,10 +44,14 @@ type MinecraftConfig struct {
 }
 
 type ControlPlaneConfig struct {
-	APIListen         string `yaml:"api_listen"`
-	MetricsListen     string `yaml:"metrics_listen"`
-	CooldownSeconds   uint64 `yaml:"cooldown_seconds"`
-	AutoBlockDuration uint64 `yaml:"auto_block_duration"`
+	APIListen         string   `yaml:"api_listen"`
+	MetricsListen     string   `yaml:"metrics_listen"`
+	CooldownSeconds   uint64   `yaml:"cooldown_seconds"`
+	AutoBlockDuration uint64   `yaml:"auto_block_duration"`
+	ExposeRemote      bool     `yaml:"expose_remote"`
+	AuthToken         string   `yaml:"auth_token"`
+	AllowedOrigins    []string `yaml:"allowed_origins"`
+	AllowedCIDRs      []string `yaml:"allowed_cidrs"`
 }
 
 type LoggingConfig struct {
@@ -65,6 +68,7 @@ type AlertConfig struct {
 
 type BGPConfig struct {
 	Enabled       bool   `yaml:"enabled"`
+	Experimental  bool   `yaml:"experimental"`
 	LocalASN      uint32 `yaml:"local_asn"`
 	RouterID      string `yaml:"router_id"`
 	AnycastPrefix string `yaml:"anycast_prefix"`
@@ -72,6 +76,7 @@ type BGPConfig struct {
 
 type TunnelConfig struct {
 	Enabled           bool   `yaml:"enabled"`
+	Experimental      bool   `yaml:"experimental"`
 	Type              string `yaml:"type"`
 	LocalIP           string `yaml:"local_ip"`
 	RemoteIP          string `yaml:"remote_ip"`
@@ -101,9 +106,12 @@ func Load(path string) (*Config, error) {
 		},
 		ControlPlane: ControlPlaneConfig{
 			APIListen:         "127.0.0.1:9090",
-			MetricsListen:     "0.0.0.0:9100",
+			MetricsListen:     "127.0.0.1:9100",
 			CooldownSeconds:   60,
 			AutoBlockDuration: 300,
+			ExposeRemote:      false,
+			AllowedOrigins:    []string{},
+			AllowedCIDRs:      []string{"127.0.0.1/32"},
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -115,5 +123,48 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse YAML: %w", err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// Validate enforces secure-by-default control-plane settings.
+func (c *Config) Validate() error {
+	if c.ControlPlane.ExposeRemote {
+		if c.ControlPlane.AuthToken == "" {
+			return fmt.Errorf("control_plane.auth_token is required when expose_remote=true")
+		}
+		if len(c.ControlPlane.AllowedCIDRs) == 0 {
+			return fmt.Errorf("control_plane.allowed_cidrs is required when expose_remote=true")
+		}
+	} else {
+		if !isLoopbackBind(c.ControlPlane.APIListen) {
+			return fmt.Errorf("control_plane.api_listen must be loopback when expose_remote=false")
+		}
+		if !isLoopbackBind(c.ControlPlane.MetricsListen) {
+			return fmt.Errorf("control_plane.metrics_listen must be loopback when expose_remote=false")
+		}
+	}
+
+	for _, cidr := range c.ControlPlane.AllowedCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("invalid CIDR in control_plane.allowed_cidrs (%s): %w", cidr, err)
+		}
+	}
+
+	return nil
+}
+
+func isLoopbackBind(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

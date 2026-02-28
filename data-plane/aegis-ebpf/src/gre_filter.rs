@@ -3,8 +3,8 @@
 //! Rate-limits GRE packets per source IP, validates GRE header version,
 //! and optionally enforces a tunnel endpoint whitelist.
 
-use aya_ebpf::maps::{LruHashMap, HashMap};
 use aegis_common::*;
+use aya_ebpf::maps::{HashMap, LruHashMap};
 
 /// GRE header (RFC 2784).
 #[repr(C)]
