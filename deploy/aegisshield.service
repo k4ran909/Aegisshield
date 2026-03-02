@@ -6,14 +6,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStartPre=/usr/sbin/ip link set dev eth0 xdp off
-ExecStartPre=/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStartPre=-/usr/sbin/ip link set dev eth0 xdp off
+ExecStartPre=-/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStartPre=-/bin/rm -rf /sys/fs/bpf/aegis
 ExecStart=/root/Aegisshield/data-plane/target/release/aegis-loader --interface eth0 --skb-mode --config /root/Aegisshield/configs/aegis.yaml
-ExecStopPost=/usr/sbin/ip link set dev eth0 xdp off
-ExecStopPost=/usr/sbin/ip link set dev eth0 xdpgeneric off
-ExecStopPost=/bin/rm -rf /sys/fs/bpf/aegis
+ExecStopPost=-/usr/sbin/ip link set dev eth0 xdp off
+ExecStopPost=-/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStopPost=-/bin/rm -rf /sys/fs/bpf/aegis
 
-# Auto-restart on crash within 5 seconds
+# Auto-restart on crash
 Restart=always
 RestartSec=5
 
@@ -21,8 +22,7 @@ RestartSec=5
 Environment=RUST_LOG=info
 
 # CRITICAL: Prevent OOM killer from targeting AegisShield
-OOMScoreAdjust=-900
-MemoryMax=128M
+OOMScoreAdjust=-999
 
 # BPF needs unlimited locked memory
 LimitMEMLOCK=infinity
