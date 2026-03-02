@@ -10,6 +10,7 @@ use aya::programs::{Xdp, XdpFlags};
 use aya::Ebpf;
 use clap::Parser;
 use log::{debug, info, warn};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,7 +20,7 @@ use std::time::{Duration, Instant};
 #[command(
     name = "aegis-loader",
     about = "AegisShield XDP data plane loader",
-    version = "0.1.0"
+    version = "0.2.0"
 )]
 struct Cli {
     /// Network interface to attach XDP program to.
@@ -41,6 +42,10 @@ struct Cli {
     /// Stats refresh interval in seconds.
     #[arg(long, default_value = "1")]
     stats_interval: u64,
+
+    /// Force detach any existing XDP program before attaching.
+    #[arg(long, default_value = "true")]
+    force_attach: bool,
 }
 
 fn main() -> Result<()> {
@@ -56,9 +61,14 @@ fn main() -> Result<()> {
 /_/   \_\___|\__, |_|_|___/____/|_| |_|_|\___|_|\__,_|
              |___/
 
-  eBPF/XDP packet filtering at wire speed
+  eBPF/XDP packet filtering at wire speed  [v0.2.0]
 "#
     );
+
+    // ── Force detach any stale XDP program ─────────────────────────────
+    if cli.force_attach {
+        force_detach_xdp(&cli.interface);
+    }
 
     info!("Loading configuration from {}", cli.config);
     let cfg = config::load_config(&cli.config).context("Failed to load configuration")?;
@@ -93,11 +103,34 @@ fn main() -> Result<()> {
         XdpFlags::DRV_MODE
     };
 
-    program.attach(&cli.interface, flags).context(format!(
-        "Failed to attach XDP to {}. Try --skb-mode for compatibility.",
-        cli.interface
-    ))?;
-    info!("XDP program attached to {} successfully", cli.interface);
+    // Retry attach up to 3 times with force detach between attempts
+    let mut attached = false;
+    for attempt in 1..=3 {
+        match program.attach(&cli.interface, flags) {
+            Ok(_) => {
+                attached = true;
+                break;
+            }
+            Err(e) => {
+                warn!(
+                    "Attach attempt {}/3 failed: {}. Force-detaching and retrying...",
+                    attempt, e
+                );
+                force_detach_xdp(&cli.interface);
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+    }
+
+    if !attached {
+        anyhow::bail!(
+            "Failed to attach XDP to {} after 3 attempts. Try rebooting or run: sudo ip link set dev {} xdp off",
+            cli.interface,
+            cli.interface
+        );
+    }
+
+    info!("✓ XDP program attached to {} successfully!", cli.interface);
 
     let cookie_secret = generate_cookie_secret();
     maps::update_config(
@@ -111,7 +144,7 @@ fn main() -> Result<()> {
         cookie_secret,
     )?;
     info!(
-        "XDP thresholds active: UDP={} SYN={} ICMP={} DNS_MAX={}",
+        "XDP thresholds: UDP={}/s SYN={}/s ICMP={}/s DNS_MAX={}B",
         cfg.thresholds.udp_pps,
         cfg.thresholds.syn_flood,
         cfg.thresholds.icmp_pps,
@@ -122,19 +155,40 @@ fn main() -> Result<()> {
     maps::load_acl_rules(&mut bpf, &cfg.acl_rules)?;
 
     if cli.pin_maps {
+        // Clean stale pins first
+        let _ = std::fs::remove_dir_all(maps::BPF_PIN_PATH);
         info!("Pinning BPF maps to {}", maps::BPF_PIN_PATH);
         maps::pin_maps(&mut bpf, maps::BPF_PIN_PATH)?;
     }
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
+    let iface_for_handler = cli.interface.clone();
     ctrlc::set_handler(move || {
+        // Clean detach on Ctrl-C
+        eprintln!(
+            "\n[!] Shutting down — detaching XDP from {}...",
+            iface_for_handler
+        );
+        let _ = Command::new("ip")
+            .args(["link", "set", "dev", &iface_for_handler, "xdp", "off"])
+            .output();
+        let _ = Command::new("ip")
+            .args([
+                "link",
+                "set",
+                "dev",
+                &iface_for_handler,
+                "xdpgeneric",
+                "off",
+            ])
+            .output();
         r.store(false, Ordering::SeqCst);
     })
     .context("Failed to set Ctrl-C handler")?;
 
     info!(
-        "AegisShield is ACTIVE on {} (Ctrl-C to stop)",
+        "AegisShield is ACTIVE — protecting interface {} (Ctrl-C to stop)",
         cli.interface
     );
 
@@ -152,7 +206,6 @@ fn main() -> Result<()> {
             Ok(stats) => dashboard.render(&stats),
             Err(err) => {
                 dashboard.set_event(format!("stats read failed: {}", err));
-                warn!("Failed to read stats: {}", err);
             }
         }
 
@@ -169,7 +222,6 @@ fn main() -> Result<()> {
                 new_secret,
             ) {
                 dashboard.set_event(format!("cookie rotation failed: {}", err));
-                warn!("Failed to rotate SYN cookie secret: {}", err);
             } else {
                 dashboard.set_event("SYN cookie secret rotated");
                 debug!("SYN cookie secret rotated");
@@ -179,16 +231,50 @@ fn main() -> Result<()> {
     }
 
     dashboard.shutdown();
+
+    // Final cleanup
     info!("Detaching XDP program from {}", cli.interface);
-    info!("AegisShield stopped");
+    force_detach_xdp(&cli.interface);
+    let _ = std::fs::remove_dir_all(maps::BPF_PIN_PATH);
+    info!("AegisShield stopped cleanly");
     Ok(())
 }
 
-/// Generate a pseudo-random SYN cookie secret.
+/// Force-detach any existing XDP program from the given interface.
+fn force_detach_xdp(interface: &str) {
+    for mode in &["xdp", "xdpgeneric", "xdpdrv", "xdpoffload"] {
+        let _ = Command::new("ip")
+            .args(["link", "set", "dev", interface, mode, "off"])
+            .output();
+    }
+    // Also clean stale pinned maps
+    let _ = std::fs::remove_dir_all(maps::BPF_PIN_PATH);
+    debug!("Force-detached XDP from {}", interface);
+}
+
+/// Generate a pseudo-random SYN cookie secret using kernel entropy.
 fn generate_cookie_secret() -> u32 {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u32;
-    now ^ 0xDEADBEEF
+    let mut buf = [0u8; 4];
+    if std::fs::read("/dev/urandom")
+        .ok()
+        .and_then(|_| None::<Vec<u8>>)
+        .is_none()
+    {
+        // Read 4 bytes from /dev/urandom for real randomness
+        if let Ok(f) = std::fs::File::open("/dev/urandom") {
+            use std::io::Read;
+            let mut f = f;
+            let _ = f.read_exact(&mut buf);
+        }
+    }
+    if buf == [0, 0, 0, 0] {
+        // Fallback: time-based
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u32;
+        now ^ 0xDEADBEEF
+    } else {
+        u32::from_ne_bytes(buf)
+    }
 }

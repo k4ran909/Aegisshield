@@ -1,0 +1,28 @@
+[Unit]
+Description=AegisShield XDP DDoS Protection
+Documentation=https://github.com/k4ran909/Aegisshield
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/ip link set dev eth0 xdp off
+ExecStartPre=/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStart=/root/Aegisshield/data-plane/target/release/aegis-loader --interface eth0 --skb-mode --config /root/Aegisshield/configs/aegis.yaml
+ExecStopPost=/usr/sbin/ip link set dev eth0 xdp off
+ExecStopPost=/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStopPost=/bin/rm -rf /sys/fs/bpf/aegis
+
+# Auto-restart on crash within 5 seconds
+Restart=always
+RestartSec=5
+
+# Environment
+Environment=RUST_LOG=info
+
+# Security hardening
+LimitMEMLOCK=infinity
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
