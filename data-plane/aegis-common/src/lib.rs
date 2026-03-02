@@ -8,10 +8,10 @@
 // Constants
 // ═══════════════════════════════════════════════════════════════════
 
-pub const BLOCKLIST_SIZE: u32 = 8192;
+pub const BLOCKLIST_SIZE: u32 = 65536;
 pub const MAX_ACL_RULES: u32 = 128;
-pub const RATE_MAP_SIZE: u32 = 16384;
-pub const CONNTRACK_SIZE: u32 = 32768;
+pub const RATE_MAP_SIZE: u32 = 131072;
+pub const CONNTRACK_SIZE: u32 = 262144;
 pub const RATE_WINDOW_NS: u64 = 1_000_000_000;
 pub const NUM_STATS: u32 = 16;
 
