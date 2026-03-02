@@ -10,10 +10,16 @@ RED='\033[1;31m'
 RESET='\033[0m'
 
 echo -e "${CYAN}"
-echo "╔══════════════════════════════════════════════════╗"
-echo "║     AegisShield Quick Deploy Script              ║"
-echo "║     eBPF/XDP DDoS Protection at Wire Speed       ║"
-echo "╚══════════════════════════════════════════════════╝"
+cat << 'BANNER'
+    _                _     ____  _     _      _     _
+   / \   ___  __ _  (_)___/ ___|| |__ (_) ___| | __| |
+  / _ \ / _ \/ _` | | / __\___ \| '_ \| |/ _ \ |/ _` |
+ / ___ \  __/ (_| | | \__ \___) | | | | |  __/ | (_| |
+/_/   \_\___|\__, |_|_|___/____/|_| |_|_|\___|_|\__,_|
+             |___/
+
+  Install Script v0.2.0 — eBPF/XDP DDoS Protection
+BANNER
 echo -e "${RESET}"
 
 # ── Check root ──────────────────────────────────────────
@@ -77,20 +83,27 @@ systemctl daemon-reload
 systemctl enable aegisshield
 
 echo ""
-echo -e "${CYAN}╔══════════════════════════════════════════════════╗"
-echo -e "║     ✓ AegisShield installed successfully!        ║"
-echo -e "╠══════════════════════════════════════════════════╣"
-echo -e "║                                                  ║"
-echo -e "║  Start:   systemctl start aegisshield            ║"
-echo -e "║  Stop:    systemctl stop aegisshield             ║"
-echo -e "║  Status:  systemctl status aegisshield           ║"
-echo -e "║  Logs:    journalctl -u aegisshield -f           ║"
-echo -e "║                                                  ║"
-echo -e "║  Config:  /root/Aegisshield/configs/aegis.yaml   ║"
-echo -e "║                                                  ║"
-echo -e "║  Or run manually:                                ║"
-echo -e "║  cd /root/Aegisshield/data-plane                 ║"
-echo -e "║  sudo RUST_LOG=info ./target/release/aegis-loader \\\\║"
-echo -e "║    --interface eth0 --skb-mode \\\\                 ║"
-echo -e "║    --config ../configs/aegis.yaml                ║"
-echo -e "╚══════════════════════════════════════════════════╝${RESET}"
+echo -e "${CYAN}"
+cat << 'DONE'
++====================================================+
+|  ✓ AegisShield installed successfully!              |
++====================================================+
+|                                                     |
+|  COMMANDS:                                          |
+|    systemctl start aegisshield    Start protection  |
+|    systemctl stop aegisshield     Stop protection   |
+|    systemctl status aegisshield   Check status      |
+|    journalctl -u aegisshield -f   Live logs         |
+|                                                     |
+|  MANUAL RUN:                                        |
+|    cd /root/Aegisshield/data-plane                  |
+|    sudo RUST_LOG=info ./target/release/aegis-loader |
+|      --interface eth0 --skb-mode                    |
+|      --config ../configs/aegis.yaml                 |
+|                                                     |
+|  CONFIG:                                            |
+|    /root/Aegisshield/configs/aegis.yaml             |
+|                                                     |
++====================================================+
+DONE
+echo -e "${RESET}"

@@ -6,6 +6,7 @@ use std::fs;
 
 /// Top-level configuration.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct AegisConfig {
     pub thresholds: ThresholdConfig,
     #[serde(default = "default_fragment_policy")]
@@ -49,6 +50,7 @@ pub struct AclRuleConfig {
 
 /// Minecraft-specific configuration.
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct MinecraftConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -62,6 +64,7 @@ pub struct MinecraftConfig {
 
 /// Control plane settings.
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct ControlPlaneConfig {
     #[serde(default = "default_api_listen")]
     pub api_listen: String,
@@ -75,6 +78,7 @@ pub struct ControlPlaneConfig {
 
 /// Logging settings.
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
