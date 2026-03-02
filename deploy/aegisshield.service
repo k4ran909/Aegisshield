@@ -20,7 +20,11 @@ RestartSec=5
 # Environment
 Environment=RUST_LOG=info
 
-# Security hardening
+# CRITICAL: Prevent OOM killer from targeting AegisShield
+OOMScoreAdjust=-900
+MemoryMax=128M
+
+# BPF needs unlimited locked memory
 LimitMEMLOCK=infinity
 LimitNOFILE=65535
 
