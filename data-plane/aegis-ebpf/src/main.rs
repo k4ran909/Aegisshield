@@ -69,10 +69,22 @@ pub fn aegis_xdp(ctx: XdpContext) -> u32 {
     }
 }
 
+/// ════════════════════════════════════════════════════════════
+/// DIAGNOSTIC: Set to true to pass ALL traffic (zero filtering).
+/// If SSH breaks even with this ON → issue is XDP/kernel, not code.
+/// If SSH works with this ON → issue is in one of our filters.
+/// ════════════════════════════════════════════════════════════
+const SAFE_MODE: bool = true;
+
 #[inline(always)]
 fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
     let now_ns = unsafe { bpf_ktime_get_ns() };
     inc_stat(STAT_RX);
+
+    if SAFE_MODE {
+        inc_stat(STAT_PASS);
+        return Ok(xdp_action::XDP_PASS);
+    }
 
     let eth_hdr = ptr_at::<EthHdr>(ctx, 0)?;
     let ether_type =
