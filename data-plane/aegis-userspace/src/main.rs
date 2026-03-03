@@ -5,6 +5,7 @@
 
 mod config;
 mod maps;
+mod web_dashboard;
 
 use anyhow::{Context, Result};
 use aya::programs::{tc, SchedClassifier, TcAttachType};
@@ -13,7 +14,7 @@ use clap::Parser;
 use log::{debug, info};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// CLI arguments for the TC loader.
@@ -161,6 +162,11 @@ fn main() -> Result<()> {
     let mut dashboard = maps::Dashboard::new(cli.interface.clone(), stats_interval);
     dashboard.set_event("TC classifier attached and map sync complete");
 
+    // Start web dashboard on port 9090
+    let web_stats: web_dashboard::SharedStats = Arc::new(Mutex::new(Vec::new()));
+    web_dashboard::start_web_server("0.0.0.0:9090", web_stats.clone());
+    info!("Web dashboard available at http://0.0.0.0:9090");
+
     let mut last_cookie_rotation = Instant::now();
     let cookie_rotation_interval = Duration::from_secs(300);
 
@@ -168,7 +174,13 @@ fn main() -> Result<()> {
         std::thread::sleep(stats_interval);
 
         match maps::read_stats(&bpf) {
-            Ok(stats) => dashboard.render(&stats),
+            Ok(stats) => {
+                // Update web dashboard stats
+                if let Ok(mut ws) = web_stats.lock() {
+                    *ws = stats.clone();
+                }
+                dashboard.render(&stats);
+            }
             Err(err) => {
                 dashboard.set_event(format!("stats read failed: {}", err));
             }
