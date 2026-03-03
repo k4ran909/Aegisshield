@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use aya::programs::{tc, SchedClassifier, TcAttachType};
 use aya::Ebpf;
 use clap::Parser;
-use log::{debug, info, warn};
+use log::{debug, info};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
