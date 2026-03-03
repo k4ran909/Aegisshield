@@ -18,7 +18,7 @@ thresholds:
 
 # XDP behavior flags
 # fragment_policy: 0=disabled, 1=drop-all (default, safest), 2=selective
-fragment_policy: 1
+fragment_policy: 0
 conntrack_enabled: true
 
 # Static IP blocklist (permanent bans).

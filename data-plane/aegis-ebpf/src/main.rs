@@ -103,10 +103,17 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
     // and all rate limiters. Nothing can block SSH.
     // ════════════════════════════════════════════════════════════════
     if matches!(protocol, IpProto::Tcp) {
-        let l4_quick = mem::size_of::<EthHdr>() + 20; // min IP header = 20 bytes
-        if let Ok(tcp_peek) = ptr_at::<TcpHdr>(ctx, l4_quick) {
-            let dst = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_peek).dest)) };
-            if u16::from_be(dst) == 22 {
+        // Read actual IP header length (IHL field) — don't assume 20 bytes
+        let ihl_byte_ptr = ptr_at::<u8>(ctx, mem::size_of::<EthHdr>())?;
+        let ihl_val = ((unsafe { *ihl_byte_ptr } & 0x0F) as usize) * 4;
+        let tcp_offset = mem::size_of::<EthHdr>() + ihl_val;
+        if let Ok(tcp_peek) = ptr_at::<TcpHdr>(ctx, tcp_offset) {
+            let s = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_peek).source)) };
+            let d = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_peek).dest)) };
+            let sp = u16::from_be(s);
+            let dp = u16::from_be(d);
+            // Pass if EITHER src or dst port is 22 (covers inbound + response)
+            if dp == 22 || sp == 22 {
                 inc_stat(STAT_PASS);
                 return Ok(xdp_action::XDP_PASS);
             }
