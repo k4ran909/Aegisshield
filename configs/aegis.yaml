@@ -9,8 +9,8 @@ thresholds:
   syn_flood: 500
 
   # Per-source-IP ICMP echo requests per second.
-  # 0 = BLOCK ALL pings (server invisible). 3 = very aggressive rate limit.
-  icmp_pps: 0
+  # 0 = block ALL. 5 = allow normal pings, ban floods (>5/sec → 1hr blacklist).
+  icmp_pps: 5
 
   # Maximum DNS response size (bytes). Anything larger = amplification.
   dns_response_size: 512
