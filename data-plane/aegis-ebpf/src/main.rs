@@ -13,11 +13,12 @@ mod udp_filter;
 
 use aegis_common::*;
 use aya_ebpf::{
-    bindings::xdp_action,
+    bindings::TC_ACT_OK,
+    bindings::TC_ACT_SHOT,
     helpers::bpf_ktime_get_ns,
-    macros::{map, xdp},
+    macros::{classifier, map},
     maps::{Array, HashMap, LruHashMap, PerCpuArray},
-    programs::XdpContext,
+    programs::TcContext,
 };
 use core::mem;
 use network_types::{
@@ -61,37 +62,27 @@ static CONNTRACK: LruHashMap<conntrack::ConnTrackKey, conntrack::ConnTrackValue>
 #[map]
 static STATS: PerCpuArray<u64> = PerCpuArray::with_max_entries(16, 0);
 
-#[xdp]
-pub fn aegis_xdp(ctx: XdpContext) -> u32 {
+/// TC classifier entry point — replaces XDP for kernel compatibility.
+/// TC BPF works on ALL kernels and ALL DigitalOcean VPS types.
+#[classifier]
+pub fn aegis_tc(ctx: TcContext) -> i32 {
     match process_packet(&ctx) {
         Ok(action) => action,
-        Err(_) => xdp_action::XDP_PASS,
+        Err(_) => TC_ACT_OK, // fail-open: pass on error
     }
 }
 
-/// ════════════════════════════════════════════════════════════
-/// DIAGNOSTIC: Set to true to pass ALL traffic (zero filtering).
-/// If SSH breaks even with this ON → issue is XDP/kernel, not code.
-/// If SSH works with this ON → issue is in one of our filters.
-/// ════════════════════════════════════════════════════════════
-const SAFE_MODE: bool = true;
-
 #[inline(always)]
-fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
+fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
     let now_ns = unsafe { bpf_ktime_get_ns() };
     inc_stat(STAT_RX);
-
-    if SAFE_MODE {
-        inc_stat(STAT_PASS);
-        return Ok(xdp_action::XDP_PASS);
-    }
 
     let eth_hdr = ptr_at::<EthHdr>(ctx, 0)?;
     let ether_type =
         unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*eth_hdr).ether_type)) };
     if ether_type != EtherType::Ipv4 {
         inc_stat(STAT_PASS);
-        return Ok(xdp_action::XDP_PASS);
+        return Ok(TC_ACT_OK);
     }
 
     let ip_hdr = ptr_at::<Ipv4Hdr>(ctx, mem::size_of::<EthHdr>())?;
@@ -115,7 +106,6 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
     // and all rate limiters. Nothing can block SSH.
     // ════════════════════════════════════════════════════════════════
     if matches!(protocol, IpProto::Tcp) {
-        // Read actual IP header length (IHL field) — don't assume 20 bytes
         let ihl_byte_ptr = ptr_at::<u8>(ctx, mem::size_of::<EthHdr>())?;
         let ihl_val = ((unsafe { *ihl_byte_ptr } & 0x0F) as usize) * 4;
         let tcp_offset = mem::size_of::<EthHdr>() + ihl_val;
@@ -124,10 +114,9 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             let d = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_peek).dest)) };
             let sp = u16::from_be(s);
             let dp = u16::from_be(d);
-            // Pass if EITHER src or dst port is 22 (covers inbound + response)
             if dp == 22 || sp == 22 {
                 inc_stat(STAT_PASS);
-                return Ok(xdp_action::XDP_PASS);
+                return Ok(TC_ACT_OK);
             }
         }
     }
@@ -136,14 +125,14 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
         if *expiry_ns == 0 || now_ns <= *expiry_ns {
             inc_stat(STAT_DROP);
             inc_stat(STAT_BLOCKLIST_DROP);
-            return Ok(xdp_action::XDP_DROP);
+            return Ok(TC_ACT_SHOT);
         }
         let _ = BLOCKLIST.remove(&src_ip_host);
     }
 
     let config = match CONFIG.get(0) {
         Some(c) => c,
-        None => return Ok(xdp_action::XDP_PASS),
+        None => return Ok(TC_ACT_OK),
     };
 
     let should_drop_fragment = match config.fragment_policy {
@@ -154,7 +143,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
     if should_drop_fragment {
         inc_stat(STAT_DROP);
         inc_stat(STAT_FRAG_DROP);
-        return Ok(xdp_action::XDP_DROP);
+        return Ok(TC_ACT_SHOT);
     }
 
     let ihl_ptr = ptr_at::<u8>(ctx, mem::size_of::<EthHdr>())?;
@@ -189,7 +178,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
         ) {
             inc_stat(STAT_PASS);
             inc_stat(STAT_CONNTRACK_BYPASS);
-            return Ok(xdp_action::XDP_PASS);
+            return Ok(TC_ACT_OK);
         }
     }
 
@@ -197,10 +186,9 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
         if !allowed {
             inc_stat(STAT_DROP);
             inc_stat(STAT_ACL_DROP);
-            return Ok(xdp_action::XDP_DROP);
+            return Ok(TC_ACT_SHOT);
         }
-        // ACL explicitly allows this traffic — bypass ALL rate limiting.
-        // This ensures SSH, HTTPS, etc. are NEVER dropped by flood filters.
+        // ACL explicitly allows — bypass ALL rate limiting.
         if config.conntrack_enabled != 0 && matches!(protocol, IpProto::Tcp | IpProto::Udp) {
             conntrack::track_connection(
                 &CONNTRACK,
@@ -215,7 +203,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             );
         }
         inc_stat(STAT_PASS);
-        return Ok(xdp_action::XDP_PASS);
+        return Ok(TC_ACT_OK);
     }
 
     match protocol {
@@ -230,7 +218,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
                 if flood_active {
                     inc_stat(STAT_DROP);
                     inc_stat(STAT_SYN_DROP);
-                    return Ok(xdp_action::XDP_DROP);
+                    return Ok(TC_ACT_SHOT);
                 }
             }
 
@@ -261,7 +249,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             if udp_filter::is_amplification_suspect(src_port, udp_payload_len) {
                 inc_stat(STAT_DROP);
                 inc_stat(STAT_DNS_DROP);
-                return Ok(xdp_action::XDP_DROP);
+                return Ok(TC_ACT_SHOT);
             }
 
             if src_port == 53 || dst_port == 53 {
@@ -278,7 +266,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
                     ) {
                         inc_stat(STAT_DROP);
                         inc_stat(STAT_DNS_DROP);
-                        return Ok(xdp_action::XDP_DROP);
+                        return Ok(TC_ACT_SHOT);
                     }
                 }
             }
@@ -287,7 +275,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             if udp_filter::check_udp_rate(&UDP_RATE, src_ip_host, threshold, now_ns) {
                 inc_stat(STAT_DROP);
                 inc_stat(STAT_UDP_DROP);
-                return Ok(xdp_action::XDP_DROP);
+                return Ok(TC_ACT_SHOT);
             }
         }
 
@@ -309,7 +297,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
                     icmp_filter::IcmpAction::Drop => {
                         inc_stat(STAT_DROP);
                         inc_stat(STAT_ICMP_DROP);
-                        return Ok(xdp_action::XDP_DROP);
+                        return Ok(TC_ACT_SHOT);
                     }
                     icmp_filter::IcmpAction::Pass => {}
                 }
@@ -331,7 +319,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
                 ) {
                     inc_stat(STAT_DROP);
                     inc_stat(STAT_GRE_DROP);
-                    return Ok(xdp_action::XDP_DROP);
+                    return Ok(TC_ACT_SHOT);
                 }
             }
         }
@@ -340,11 +328,11 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
     }
 
     inc_stat(STAT_PASS);
-    Ok(xdp_action::XDP_PASS)
+    Ok(TC_ACT_OK)
 }
 
 #[inline(always)]
-fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
+fn ptr_at<T>(ctx: &TcContext, offset: usize) -> Result<*const T, ()> {
     let start = ctx.data();
     let end = ctx.data_end();
     let len = mem::size_of::<T>();

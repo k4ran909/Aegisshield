@@ -1,17 +1,15 @@
 [Unit]
-Description=AegisShield XDP DDoS Protection
+Description=AegisShield TC/eBPF DDoS Protection
 Documentation=https://github.com/k4ran909/Aegisshield
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStartPre=-/usr/sbin/ip link set dev eth0 xdp off
-ExecStartPre=-/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStartPre=-/usr/sbin/tc qdisc del dev eth0 clsact
 ExecStartPre=-/bin/rm -rf /sys/fs/bpf/aegis
-ExecStart=/root/Aegisshield/data-plane/target/release/aegis-loader --interface eth0 --skb-mode --config /root/Aegisshield/configs/aegis.yaml
-ExecStopPost=-/usr/sbin/ip link set dev eth0 xdp off
-ExecStopPost=-/usr/sbin/ip link set dev eth0 xdpgeneric off
+ExecStart=/root/Aegisshield/data-plane/target/release/aegis-loader --interface eth0 --config /root/Aegisshield/configs/aegis.yaml
+ExecStopPost=-/usr/sbin/tc qdisc del dev eth0 clsact
 ExecStopPost=-/bin/rm -rf /sys/fs/bpf/aegis
 
 # Auto-restart on crash
