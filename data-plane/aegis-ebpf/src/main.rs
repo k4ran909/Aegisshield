@@ -164,6 +164,23 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
             inc_stat(STAT_ACL_DROP);
             return Ok(xdp_action::XDP_DROP);
         }
+        // ACL explicitly allows this traffic — bypass ALL rate limiting.
+        // This ensures SSH, HTTPS, etc. are NEVER dropped by flood filters.
+        if config.conntrack_enabled != 0 && matches!(protocol, IpProto::Tcp | IpProto::Udp) {
+            conntrack::track_connection(
+                &CONNTRACK,
+                proto_u8,
+                src_ip_host,
+                dst_ip_host,
+                src_port,
+                dst_port,
+                now_ns,
+                ip_total_len as u64,
+                conntrack::ConnState::Established,
+            );
+        }
+        inc_stat(STAT_PASS);
+        return Ok(xdp_action::XDP_PASS);
     }
 
     match protocol {
