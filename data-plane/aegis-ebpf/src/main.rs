@@ -97,6 +97,22 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
     let src_ip_host = u32::from_be(src_ip);
     let dst_ip_host = u32::from_be(dst_ip);
 
+    // ════════════════════════════════════════════════════════════════
+    // HARDCODED SSH FAST-PATH — SSH (TCP port 22) is NEVER dropped.
+    // This runs BEFORE blocklist, fragment filter, conntrack, ACL,
+    // and all rate limiters. Nothing can block SSH.
+    // ════════════════════════════════════════════════════════════════
+    if matches!(protocol, IpProto::Tcp) {
+        let l4_quick = mem::size_of::<EthHdr>() + 20; // min IP header = 20 bytes
+        if let Ok(tcp_peek) = ptr_at::<TcpHdr>(ctx, l4_quick) {
+            let dst = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!((*tcp_peek).dest)) };
+            if u16::from_be(dst) == 22 {
+                inc_stat(STAT_PASS);
+                return Ok(xdp_action::XDP_PASS);
+            }
+        }
+    }
+
     if let Some(expiry_ns) = unsafe { BLOCKLIST.get(&src_ip_host) } {
         if *expiry_ns == 0 || now_ns <= *expiry_ns {
             inc_stat(STAT_DROP);
