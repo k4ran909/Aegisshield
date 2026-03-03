@@ -1,7 +1,6 @@
 //! Built-in web dashboard — serves a live stats page on port 9090.
 //! Uses only std::net (zero external deps). Auto-refreshes every second.
 
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
