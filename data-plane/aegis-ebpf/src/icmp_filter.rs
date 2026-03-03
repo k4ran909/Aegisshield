@@ -58,6 +58,11 @@ pub fn check_icmp(
         return IcmpAction::Pass;
     }
 
+    // threshold=0 means block ALL pings — server becomes invisible.
+    if threshold == 0 {
+        return IcmpAction::Drop;
+    }
+
     // Per-IP rate limiting.
     match unsafe { rate_map.get(&src_ip) } {
         Some(state) => {

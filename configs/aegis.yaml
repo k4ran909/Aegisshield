@@ -2,16 +2,15 @@
 # Tuned for real-world botnet DDoS mitigation.
 
 thresholds:
-  # Per-source-IP UDP packets per second before dropping.
-  # Lower = more aggressive. Set 500 for game servers, 200 for web-only.
-  udp_pps: 500
+  # Per-source-IP UDP packets per second before dropping + 1hr ban.
+  udp_pps: 100
 
   # Global SYN packets per second before flood mode activates.
-  # This is per-CPU, so real threshold ≈ value × num_cores.
-  syn_flood: 2000
+  syn_flood: 500
 
   # Per-source-IP ICMP echo requests per second.
-  icmp_pps: 20
+  # 0 = BLOCK ALL pings (server invisible). 3 = very aggressive rate limit.
+  icmp_pps: 0
 
   # Maximum DNS response size (bytes). Anything larger = amplification.
   dns_response_size: 512
