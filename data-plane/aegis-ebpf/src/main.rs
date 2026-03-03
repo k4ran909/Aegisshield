@@ -208,7 +208,7 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
 
     match protocol {
         IpProto::Tcp => {
-            let tcp_hdr = ptr_at::<TcpHdr>(ctx, l4_offset)?;
+            let _tcp_hdr = ptr_at::<TcpHdr>(ctx, l4_offset)?;
             let flags = unsafe { *((ctx.data() + l4_offset + 13) as *const u8) };
             let is_syn = (flags & 0x02) != 0 && (flags & 0x10) == 0;
 
@@ -239,8 +239,6 @@ fn process_packet(ctx: &XdpContext) -> Result<u32, ()> {
                     },
                 );
             }
-
-            let _ = tcp_hdr;
         }
 
         IpProto::Udp => {

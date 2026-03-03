@@ -14,8 +14,3 @@ aegis-common = { path = "../aegis-common" }
 network-types = "0.0.7"
 
 [build-dependencies]
-
-[profile.dev]
-opt-level = 3
-debug = false
-overflow-checks = false
