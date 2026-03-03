@@ -28,6 +28,9 @@ use network_types::{
     udp::UdpHdr,
 };
 
+/// Auto-blacklist duration: 1 hour in nanoseconds.
+const BLACKLIST_DURATION_NS: u64 = 3_600_000_000_000;
+
 #[map]
 static BLOCKLIST: HashMap<u32, u64> = HashMap::with_max_entries(BLOCKLIST_SIZE, 0);
 
@@ -216,6 +219,7 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
                 let flood_active =
                     syn_proxy::check_syn_flood(&SYN_COUNTER, config.syn_flood_threshold, now_ns);
                 if flood_active {
+                    blacklist_attacker(src_ip_host, now_ns);
                     inc_stat(STAT_DROP);
                     inc_stat(STAT_SYN_DROP);
                     return Ok(TC_ACT_SHOT);
@@ -247,6 +251,7 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
             let udp_payload_len = u16::from_be(udp_len).saturating_sub(8);
 
             if udp_filter::is_amplification_suspect(src_port, udp_payload_len) {
+                blacklist_attacker(src_ip_host, now_ns);
                 inc_stat(STAT_DROP);
                 inc_stat(STAT_DNS_DROP);
                 return Ok(TC_ACT_SHOT);
@@ -264,6 +269,7 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
                         udp_payload_len,
                         config.dns_max_response_size,
                     ) {
+                        blacklist_attacker(src_ip_host, now_ns);
                         inc_stat(STAT_DROP);
                         inc_stat(STAT_DNS_DROP);
                         return Ok(TC_ACT_SHOT);
@@ -273,6 +279,7 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
 
             let threshold = udp_filter::get_port_threshold(dst_port, config.udp_rate_threshold);
             if udp_filter::check_udp_rate(&UDP_RATE, src_ip_host, threshold, now_ns) {
+                blacklist_attacker(src_ip_host, now_ns);
                 inc_stat(STAT_DROP);
                 inc_stat(STAT_UDP_DROP);
                 return Ok(TC_ACT_SHOT);
@@ -295,6 +302,7 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
                     now_ns,
                 ) {
                     icmp_filter::IcmpAction::Drop => {
+                        blacklist_attacker(src_ip_host, now_ns);
                         inc_stat(STAT_DROP);
                         inc_stat(STAT_ICMP_DROP);
                         return Ok(TC_ACT_SHOT);
@@ -317,6 +325,7 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
                     gre_threshold,
                     now_ns,
                 ) {
+                    blacklist_attacker(src_ip_host, now_ns);
                     inc_stat(STAT_DROP);
                     inc_stat(STAT_GRE_DROP);
                     return Ok(TC_ACT_SHOT);
@@ -329,6 +338,12 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
 
     inc_stat(STAT_PASS);
     Ok(TC_ACT_OK)
+}
+
+#[inline(always)]
+fn blacklist_attacker(src_ip: u32, now_ns: u64) {
+    let expiry = now_ns + BLACKLIST_DURATION_NS;
+    let _ = BLOCKLIST.insert(&src_ip, &expiry, 0);
 }
 
 #[inline(always)]
